@@ -17,6 +17,8 @@ Thumbs.db
 data/raw/uploads/*
 !data/raw/uploads/.gitkeep
 data/interim/*
+!data/interim/processed_features.parquet
 data/processed/*
+!data/processed/merged_raw.parquet
 plots/*
 .ipynb_checkpoints/
