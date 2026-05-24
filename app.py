@@ -109,9 +109,14 @@ def initialize_app():
         logger.error(f"Error loading penalty matrix: {str(e)}")
 
 # Trigger initialization on startup
+startup_error = None
+startup_traceback = None
 try:
     initialize_app()
 except Exception as ex:
+    import traceback
+    startup_error = str(ex)
+    startup_traceback = traceback.format_exc()
     logger.error(f"Startup initialization failed: {str(ex)}")
 
 # ---------------------------------------------------------
@@ -128,9 +133,16 @@ def serve_plot(filename):
     """Serves static plot files directly from the plots directory."""
     return send_from_directory('plots', filename)
 
-# ---------------------------------------------------------
-# REST API ENDPOINTS
-# ---------------------------------------------------------
+@app.route('/api/debug/logs', methods=['GET'])
+def debug_logs():
+    return jsonify({
+        "df_processed_loaded": df_processed is not None,
+        "models_orig_keys": list(models_orig.keys()),
+        "models_wav_keys": list(models_wav.keys()),
+        "penalty_matrix_loaded": penalty_matrix is not None,
+        "startup_error": startup_error,
+        "startup_traceback": startup_traceback
+    })
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
