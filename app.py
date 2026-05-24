@@ -260,29 +260,35 @@ def get_well_model_comparison(well_id):
         model_names = ['KNN', 'Random Forest', 'Decision Tree', 'XGBoost', 'LightGBM']
         
         for name in model_names:
-            # 12F Original metrics
-            acc12, pen12, ham12 = 0.0, 0.0, 0.0
-            if name in models_orig:
-                model12 = models_orig[name]
-                X_raw12 = well_df[ORIGINAL_COLS]
-                X_in12 = scaler_orig.transform(X_raw12) if name == 'KNN' else X_raw12.values
-                y_pred12 = model12.predict(X_in12).astype(int)[valid_mask]
-                m12 = get_classification_metrics(y_true_valid, y_pred12, penalty_matrix)
-                acc12 = float(m12["Accuracy"])
-                pen12 = float(m12["PenaltyScore"])
-                ham12 = float(m12["HammingLoss"])
-                
-            # 19F Wavelet metrics
-            acc19, pen19, ham19 = 0.0, 0.0, 0.0
-            if name in models_wav:
-                model19 = models_wav[name]
-                X_raw19 = well_df[WAVELET_COLS]
-                X_in19 = scaler_wav.transform(X_raw19) if name == 'KNN' else X_raw19.values
-                y_pred19 = model19.predict(X_in19).astype(int)[valid_mask]
-                m19 = get_classification_metrics(y_true_valid, y_pred19, penalty_matrix)
-                acc19 = float(m19["Accuracy"])
-                pen19 = float(m19["PenaltyScore"])
-                ham19 = float(m19["HammingLoss"])
+            try:
+                # 12F Original metrics
+                acc12, pen12, ham12 = 0.0, 0.0, 0.0
+                if name in models_orig:
+                    model12 = models_orig[name]
+                    X_raw12 = well_df[ORIGINAL_COLS]
+                    X_in12 = scaler_orig.transform(X_raw12) if name == 'KNN' else X_raw12.values
+                    y_pred12 = model12.predict(X_in12).astype(int)[valid_mask]
+                    m12 = get_classification_metrics(y_true_valid, y_pred12, penalty_matrix)
+                    acc12 = float(m12["Accuracy"])
+                    pen12 = float(m12["PenaltyScore"])
+                    ham12 = float(m12["HammingLoss"])
+                    
+                # 19F Wavelet metrics
+                acc19, pen19, ham19 = 0.0, 0.0, 0.0
+                if name in models_wav:
+                    model19 = models_wav[name]
+                    X_raw19 = well_df[WAVELET_COLS]
+                    X_in19 = scaler_wav.transform(X_raw19) if name == 'KNN' else X_raw19.values
+                    y_pred19 = model19.predict(X_in19).astype(int)[valid_mask]
+                    m19 = get_classification_metrics(y_true_valid, y_pred19, penalty_matrix)
+                    acc19 = float(m19["Accuracy"])
+                    pen19 = float(m19["PenaltyScore"])
+                    ham19 = float(m19["HammingLoss"])
+            except Exception as model_err:
+                logger.error(f"Error predicting model {name}: {str(model_err)}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({"error": f"Model {name} failed: {str(model_err)}", "trace": traceback.format_exc()}), 500
                 
             results.append({
                 "name": name + " ★" if name == "Random Forest" else name,
