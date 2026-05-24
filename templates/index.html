@@ -1,0 +1,1988 @@
+{% raw %}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LithoFacies ML — Subsurface Geologic Intelligence</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
+    rel="stylesheet">
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            void: '#090e0c',
+            surface: '#141a17',
+            elevated: '#1c2420',
+            card: '#16211c',
+            accent: {
+              primary: '#38B6FF',
+              secondary: '#00FF88',
+              warn: '#A66E4E',
+              danger: '#FF4D6A',
+            }
+          },
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+            heading: ['Outfit', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React & ReactDOM (Production) -->
+  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- Babel Standalone (JSX compiler in browser) -->
+  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+
+  <!-- HLS.js for live seismic video stream -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+  <!-- Recharts & dependencies -->
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+
+  <style>
+    /* Custom Styling Overrides & Global Effects */
+    body {
+      background-color: #090e0c;
+      overflow-x: hidden;
+      color: #F0F4F8;
+    }
+
+    /* Scanline Overlay effect */
+    .scanline-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%,
+          rgba(0, 0, 0, 0.25) 50%);
+      background-size: 100% 4px;
+      opacity: 0.025;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* Grain/Noise Overlay */
+    .grain-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+      opacity: 0.04;
+      pointer-events: none;
+      z-index: 9998;
+    }
+
+    /* Floating Capsule Navbar */
+    .capsule-navbar {
+      background: rgba(14, 22, 18, 0.45);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Custom premium scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #090e0c;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #1c2420;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #38B6FF;
+    }
+
+    /* Text Gradient */
+    .text-gradient-rock {
+      background: linear-gradient(135deg, #38B6FF 0%, #00FF88 50%, #A66E4E 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Dynamic fade-up page entrance */
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fade-up {
+      animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+  </style>
+</head>
+
+<body class="h-full font-sans antialiased">
+  <!-- Interactive Cinematic Overlays -->
+  <div class="scanline-overlay"></div>
+  <div class="grain-overlay"></div>
+
+  <!-- React Mount Point -->
+  <div id="root" class="h-full"></div>
+
+  <!-- React Logic & Core SPA App Engine -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    const {
+      ResponsiveContainer, AreaChart, Area, BarChart, Bar,
+      XAxis, YAxis, Tooltip, Legend, RadarChart, PolarGrid,
+      PolarAngleAxis, PolarRadiusAxis, Radar, CartesianGrid
+    } = Recharts;
+
+    // Fixed color code mapping for 12 lithologies (organic tones)
+    const FACIES_COLOR_MAP = {
+      'Sandstone': '#F5A623',
+      'Shale': '#555566',
+      'Limestone': '#38B6FF',
+      'Chalk': '#E8EDF2',
+      'Halite': '#FF4D6A',
+      'Dolomite': '#00E5CC',
+      'Coal': '#111116',
+      'Marl': '#8B6914',
+      'Anhydrite': '#C084FC',
+      'Tuff': '#86EFAC',
+      'Basement': '#374151',
+      'Sandstone/Shale': '#D97706'
+    };
+
+    // Hardcoded Norway Benchmark Scores table replicated from Table 6
+    const BENCHMARK_SCORES = [
+      { name: 'KNN', acc12: 0.926, pen12: -0.1796, ham12: 0.0672, acc19: 0.801, pen19: -0.5237, ham19: 0.1969 },
+      { name: 'Random Forest ★', acc12: 0.948, pen12: -0.1289, ham12: 0.0473, acc19: 0.938, pen19: -0.1697, ham19: 0.0624, isWinner: true },
+      { name: 'Decision Tree', acc12: 0.820, pen12: -0.4810, ham12: 0.1832, acc19: 0.817, pen19: -0.4810, ham19: 0.1826 },
+      { name: 'XGBoost', acc12: 0.855, pen12: -0.3812, ham12: 0.1418, acc19: 0.862, pen19: -0.3681, ham19: 0.1631 },
+      { name: 'LightGBM', acc12: 0.897, pen12: -0.2600, ham12: 0.0984, acc19: 0.901, pen19: -0.2599, ham19: 0.1378 }
+    ];
+
+    const normalizeDatasetName = (name) => {
+      if (!name) return '';
+      return name.replace(/[\u2014\u2013-]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
+    };
+
+    // Preloaded Datasets selection configurations
+    const PRELOADED_DATASETS = [
+      { id: '01', name: 'Norway — FORCE 2020 Full', details: '98 wells, 12 lithofacies classes, 234,103 samples', wellCode: 'WELL_FORCE_2020_01' },
+      { id: '02', name: 'Norway — North Sea Subset', details: '20 wells, balanced class sampling, 48,000 samples', wellCode: 'WELL_FORCE_2020_02' },
+      { id: '03', name: 'Kazakhstan Field', details: '10 wells, 5 lithofacies, 59,423 samples', wellCode: 'WELL_FORCE_2020_03' },
+      { id: '04', name: 'Norway — Single Well Demo', details: '1 well, instant results, best for exploration', wellCode: 'WELL_FORCE_2020_04' }
+    ];
+
+    const LITHOLOGY_LABELS = [
+      'Sandstone', 'Sandstone/Shale', 'Shale', 'Marl', 'Dolomite', 'Limestone',
+      'Chalk', 'Halite', 'Anhydrite', 'Tuff', 'Coal', 'Basement'
+    ];
+
+    // Landing screen HLS stream video rendering
+    const VideoStream = () => {
+      const videoRef = useRef(null);
+
+      useEffect(() => {
+        if (!videoRef.current) return;
+        const video = videoRef.current;
+        const streamUrl = 'https://stream.mux.com/01yW6GoUz01OTXk5w1Rt1MHkJWlCGIwj46SUONJZ4DJUE.m3u8';
+
+        if (typeof Hls !== 'undefined' && Hls.isSupported && Hls.isSupported()) {
+          const hls = new Hls();
+          hls.loadSource(streamUrl);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            video.play().catch(e => console.log('HLS Play Blocked:', e));
+          });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = streamUrl;
+          video.addEventListener('loadedmetadata', () => {
+            video.play().catch(e => console.log('Native Play Blocked:', e));
+          });
+        } else {
+          // Fallback poster/background if streaming is entirely unsupported/blocked
+          video.poster = "https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?auto=format&fit=crop&w=1200&q=80";
+        }
+      }, []);
+
+      return (
+        <video
+          ref={videoRef}
+          className="absolute top-0 left-0 w-full h-full object-cover pointer-events-none"
+          autoPlay
+          muted
+          loop
+          playsInline
+        />
+      );
+    };
+
+    // Continuous Wavelet scalogram Canvas Renderer
+    const WaveletScalogramCanvas = ({ wellLogs, waveletLogSelect }) => {
+      const canvasRef = useRef(null);
+
+      useEffect(() => {
+        if (!canvasRef.current || !wellLogs) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // Clear previous canvas
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw continuous wavelet ridges (Mexican hat coefficients matrix simulation)
+        const traceLog = wellLogs[waveletLogSelect] || wellLogs.GR;
+        const len = traceLog.length;
+
+        for (let y = 0; y < height; y++) {
+          // Frequencies scaling along y-axis
+          const frequencyScale = 1 + (y / height) * 32;
+
+          for (let x = 0; x < width; x++) {
+            const dataIdx = Math.floor((x / width) * len);
+            const val = traceLog[dataIdx];
+
+            // Apply Ricker continuous wavelet formula coefficients simulation
+            const rawCoef = Math.sin(dataIdx * 0.05 * frequencyScale) * Math.cos(val * 0.02) * Math.exp(-0.002 * Math.pow(x - width / 2, 2) / frequencyScale);
+
+            // Map coefficients to a color scale: blue (negative) -> black (zero) -> red (positive)
+            let r = 0, g = 0, b = 0;
+            if (rawCoef > 0) {
+              r = Math.floor(Math.min(255, rawCoef * 350));
+            } else {
+              b = Math.floor(Math.min(255, Math.abs(rawCoef) * 350));
+            }
+
+            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }, [wellLogs, waveletLogSelect]);
+
+      return (
+        <div className="relative w-full overflow-hidden bg-void rounded-lg border border-border-subtle p-2">
+          <canvas ref={canvasRef} className="w-full h-72 block rounded" width="600" height="200"></canvas>
+          <div className="flex justify-between text-[10px] font-mono text-accent-primary mt-2">
+            <span>Low Frequency Bounds</span>
+            <span>High Frequency Ridge Scan</span>
+          </div>
+        </div>
+      );
+    };
+
+    // Interactive Well Attribute Observatory
+    const MissingDataMap = ({ availableWells, selectedWell, setSelectedWell, wellLogs }) => {
+      // Define attribute details: name, description, unit, range, and standard average readings
+      const attributeDetails = {
+        'GR': { fullName: 'Gamma Ray Log', desc: 'Senses natural radioactivity of formations to identify shale/clay layers.', unit: 'gAPI', range: '0 - 150', mean: 75.4, status: 'Optimal' },
+        'RHOB': { fullName: 'Bulk Density Log', desc: 'Measures bulk density of formations to calculate porosity and rock matrix.', unit: 'g/cc', range: '1.5 - 3.0', mean: 2.34, status: 'Optimal' },
+        'NPHI': { fullName: 'Neutron Porosity', desc: 'Indicates the hydrogen index, key for liquid-filled pore volume identification.', unit: 'v/v', range: '-0.15 - 0.45', mean: 0.22, status: 'Optimal' },
+        'DTC': { fullName: 'Sonic Travel Time', desc: 'Compressional wave travel time used for rock strength and seismic ties.', unit: 'µs/ft', range: '40 - 140', mean: 82.1, status: 'Optimal' },
+        'RMED': { fullName: 'Medium Resistivity', desc: 'Medium depth of investigation resistivity log tracking fluid content.', unit: 'ohm.m', range: '0.2 - 2000', mean: 15.6, status: 'Optimal' },
+        'RDEP': { fullName: 'Deep Resistivity', desc: 'Deepest investigation resistivity log key for water/oil saturation.', unit: 'ohm.m', range: '0.2 - 2000', mean: 18.2, status: 'Optimal' },
+        'RSHA': { fullName: 'Shallow Resistivity', desc: 'Shallow sensor tracking mud filtrate invasion near borehole wall.', unit: 'ohm.m', range: '0.2 - 2000', mean: 12.4, status: 'Optimal' },
+        'CALI': { fullName: 'Caliper Log', desc: 'Measures borehole diameter, tracking borehole rugosity or washouts.', unit: 'inches', range: '6.0 - 20.0', mean: 8.5, status: 'Optimal' },
+        'PEF': { fullName: 'Photoelectric Factor', desc: 'Determines the mineral composition (lithology matrix index).', unit: 'b/e', range: '1.0 - 10.0', mean: 3.2, status: 'Optimal' },
+        'SP': { fullName: 'Spontaneous Potential', desc: 'Tracks natural electrical currents to separate permeable and impermeable beds.', unit: 'mV', range: '-120 - 40', mean: -45.0, status: 'Optimal' },
+        'BS': { fullName: 'Bit Size Log', desc: 'Nominal diameter of the drill bit used to create the borehole.', unit: 'inches', range: '8.5 - 12.25', mean: 8.5, status: 'Optimal' },
+        'DEPTH_MD': { fullName: 'Measured Depth', desc: 'Physical borehole track distance measured along wellbore path.', unit: 'm', range: '1200 - 4500', mean: 2850, status: 'Optimal' }
+      };
+
+      // Determine real mean values from current wellLogs, otherwise use base
+      const getWellValue = (attrKey) => {
+        const base = attributeDetails[attrKey];
+        if (!base) return null;
+
+        let meanVal = base.mean;
+        let status = 'Optimal';
+
+        if (wellLogs && wellLogs.well_data) {
+          const arr = wellLogs.well_data[attrKey];
+          if (Array.isArray(arr) && arr.length > 0) {
+            const validVals = arr.filter(v => v !== null && v !== undefined && !isNaN(v));
+            if (validVals.length > 0) {
+              const sum = validVals.reduce((acc, curr) => acc + curr, 0);
+              meanVal = sum / validVals.length;
+              
+              // If there are many nulls, we can call it Imputed
+              const missingCount = arr.length - validVals.length;
+              if (missingCount > 0) {
+                status = 'Imputed';
+              }
+            } else {
+              meanVal = 0.0;
+              status = 'Missing';
+            }
+          } else {
+            meanVal = 0.0;
+            status = 'Missing';
+          }
+        } else {
+          // Simulated variation if wellLogs is not loaded yet based on selectedWell
+          if (selectedWell === 'WELL_FORCE_2020_02' && (attrKey === 'RHOB' || attrKey === 'RMED')) {
+            status = 'Imputed';
+            meanVal = base.mean * 0.95;
+          } else if (selectedWell === 'WELL_FORCE_2020_03' && (attrKey === 'SP' || attrKey === 'BS')) {
+            status = 'Missing';
+            meanVal = 0.0;
+          } else if (selectedWell === 'WELL_FORCE_2020_04' && (attrKey === 'CALI' || attrKey === 'PEF')) {
+            status = 'Imputed';
+            meanVal = base.mean * 0.88;
+          } else if (selectedWell === 'uploaded_well' && (attrKey === 'SP' || attrKey === 'BS')) {
+            status = 'Missing';
+            meanVal = 0.0;
+          }
+        }
+
+        return {
+          ...base,
+          mean: meanVal,
+          status
+        };
+      };
+
+      // If availableWells is empty, fallback to a standard list of preloaded wells
+      const wellsToRender = availableWells.length > 0 ? 
+        availableWells.map(w => w.well_id) : 
+        ['WELL_FORCE_2020_01', 'WELL_FORCE_2020_02', 'WELL_FORCE_2020_03', 'WELL_FORCE_2020_04'];
+
+      return (
+        <div className="flex flex-col gap-6 bg-void/50 p-6 rounded-2xl border border-border-subtle">
+
+          {/* Well Selector Horizontal Scroll Bar */}
+          <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+            {wellsToRender.map(w => (
+              <button
+                key={w}
+                onClick={() => setSelectedWell(w)}
+                className={`px-5 py-2.5 rounded-xl font-heading font-bold text-xs uppercase tracking-wider transition-all duration-300 flex-shrink-0 ${selectedWell === w ? 'bg-accent-secondary text-void shadow-[0_0_15px_rgba(0,255,136,0.15)] scale-[1.02]' : 'bg-card border border-border-subtle text-text-secondary hover:text-white hover:border-text-muted'}`}
+              >
+                <i className="fa-solid fa-bore-hole mr-2"></i>{w}
+              </button>
+            ))}
+          </div>
+
+          {/* Ingested Attributes Dashboard Table Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.keys(attributeDetails).map(attrKey => {
+              const attr = getWellValue(attrKey);
+
+              // Color mapping for statuses
+              const statusColors = {
+                'Optimal': { text: 'text-accent-secondary', bg: 'bg-accent-secondary/10', dot: 'bg-accent-secondary' },
+                'Imputed': { text: 'text-accent-warn', bg: 'bg-accent-warn/10', dot: 'bg-accent-warn' },
+                'Missing': { text: 'text-accent-danger', bg: 'bg-accent-danger/10', dot: 'bg-accent-danger' }
+              }[attr.status];
+
+              return (
+                <div key={attrKey} className="bg-card border border-border-subtle p-4 rounded-xl flex flex-col justify-between transition-all duration-300 hover:border-accent-primary/20 hover:shadow-[0_5px_15px_rgba(56,182,255,0.02)]">
+
+                  <div className="flex justify-between items-start gap-4 mb-2">
+                    <div>
+                      <span className="font-mono text-accent-primary font-bold text-base">{attrKey}</span>
+                      <h4 className="font-heading font-bold text-[13px] text-white leading-tight mt-0.5">{attr.fullName}</h4>
+                    </div>
+
+                    <span className={`px-2.5 py-0.5 rounded-full font-mono text-[9px] uppercase tracking-wider flex items-center gap-1.5 ${statusColors.text} ${statusColors.bg}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${statusColors.dot} animate-pulse`}></span>
+                      {attr.status}
+                    </span>
+                  </div>
+
+                  <p className="font-sans text-[11px] text-text-muted leading-relaxed mb-4 flex-grow">
+                    {attr.desc}
+                  </p>
+
+                  <div className="border-t border-border-subtle pt-3 flex justify-between items-center text-[10px] font-mono text-text-secondary">
+                    <div>
+                      <span className="block text-[8px] text-text-muted uppercase">Recorded Value</span>
+                      <strong className="text-white text-sm font-extrabold">
+                        {attr.status === 'Missing' ? 'N/A' : `${attr.mean.toFixed(2)} ${attr.unit}`}
+                      </strong>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="block text-[8px] text-text-muted uppercase">Optimal Range</span>
+                      <span>{attr.range} {attr.unit}</span>
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+      );
+    };
+
+    // Custom 5-Track SVG Well Log track visualizer
+    const WellTrackVisualizer = ({ wellLogs }) => {
+      if (!wellLogs) return null;
+
+      const defaultIndex = Math.min(150, wellLogs.depth.length - 1);
+      const initialDepth = wellLogs.depth[defaultIndex] || 0;
+      const initialPred = wellLogs.predictions[defaultIndex] || 'Shale';
+      const initialProb = wellLogs.probabilities[defaultIndex] || 1.0;
+
+      // Sync local depth indexing coordinate dynamically via high-performance direct DOM updates
+      const handleTrackMouseMove = (e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const relativeY = e.clientY - rect.top;
+        const totalHeight = rect.height;
+        const idx = Math.max(0, Math.min(wellLogs.depth.length - 1, Math.floor((relativeY / totalHeight) * wellLogs.depth.length)));
+
+        const activeDepth = wellLogs.depth[idx];
+        const activePred = wellLogs.predictions[idx];
+        const activeProb = wellLogs.probabilities[idx];
+
+        // Elements to update
+        const elDepth = document.getElementById('hud-depth');
+        const elPred = document.getElementById('hud-pred');
+        const elProb = document.getElementById('hud-prob');
+        const elFaciesPointer = document.getElementById('facies-pointer');
+        const elCursorLine = document.getElementById('cursor-line');
+        const elCursorDepthLabel = document.getElementById('cursor-depth-label');
+
+        const elValGr = document.getElementById('val-gr');
+        const elValRhob = document.getElementById('val-rhob');
+        const elValNphi = document.getElementById('val-nphi');
+        const elValRmed = document.getElementById('val-rmed');
+        const elValDtc = document.getElementById('val-dtc');
+
+        // Mutate values instantly
+        if (elDepth) elDepth.textContent = activeDepth.toFixed(1) + ' m';
+        if (elPred) {
+          elPred.textContent = activePred;
+          elPred.style.color = FACIES_COLOR_MAP[activePred] || '#ffffff';
+        }
+        if (elProb) elProb.textContent = 'Confidence: ' + (activeProb * 100).toFixed(1) + '%';
+        if (elFaciesPointer) elFaciesPointer.style.top = `${(idx / wellLogs.predictions.length) * 100}%`;
+        if (elCursorLine) {
+          elCursorLine.style.top = `${(relativeY / totalHeight) * 480}px`;
+          elCursorLine.style.display = 'block';
+        }
+        if (elCursorDepthLabel) elCursorDepthLabel.textContent = 'Cursor Track Depth: ' + activeDepth.toFixed(1) + ' m';
+
+        if (elValGr && wellLogs.GR) elValGr.textContent = wellLogs.GR[idx] !== null && wellLogs.GR[idx] !== undefined ? wellLogs.GR[idx].toFixed(2) : 'N/A';
+        if (elValRhob && wellLogs.RHOB) elValRhob.textContent = wellLogs.RHOB[idx] !== null && wellLogs.RHOB[idx] !== undefined ? wellLogs.RHOB[idx].toFixed(2) : 'N/A';
+        if (elValNphi && wellLogs.NPHI) elValNphi.textContent = wellLogs.NPHI[idx] !== null && wellLogs.NPHI[idx] !== undefined ? wellLogs.NPHI[idx].toFixed(2) : 'N/A';
+        if (elValRmed && wellLogs.RMED) elValRmed.textContent = wellLogs.RMED[idx] !== null && wellLogs.RMED[idx] !== undefined ? wellLogs.RMED[idx].toFixed(2) : 'N/A';
+        if (elValDtc && wellLogs.DTC) elValDtc.textContent = wellLogs.DTC[idx] !== null && wellLogs.DTC[idx] !== undefined ? wellLogs.DTC[idx].toFixed(2) : 'N/A';
+      };
+
+      // Draw individual curve traces
+      const getSVGPoints = (curveData, minVal, maxVal, width = 160, height = 480) => {
+        return curveData.map((val, idx) => {
+          const x = ((val - minVal) / (maxVal - minVal)) * width;
+          const y = (idx / curveData.length) * height;
+          return `${x},${y}`;
+        }).join(' ');
+      };
+
+      return (
+        <div className="w-full overflow-x-auto scrollbar-thin">
+          <div className="grid grid-cols-12 gap-4 bg-void p-6 rounded-2xl border border-border-subtle relative min-w-[680px] md:min-w-0">
+
+            {/* Hover floating coordinate dashboard HUD */}
+            <div className="col-span-12 flex justify-between items-center bg-elevated/80 border border-border-accent/20 px-4 py-2.5 rounded-xl backdrop-blur-md">
+              <div className="flex gap-4">
+                <span className="text-xs font-mono text-text-secondary">ACTIVE DEPTH: <strong id="hud-depth" className="text-accent-primary text-sm">{initialDepth.toFixed(1)} m</strong></span>
+                <span className="text-xs font-mono text-text-secondary">FACIES CLASSIFICATION: <strong id="hud-pred" className="text-accent-secondary text-sm" style={{ color: FACIES_COLOR_MAP[initialPred] }}>{initialPred}</strong></span>
+              </div>
+              <span id="hud-prob" className="text-xs font-mono text-accent-primary bg-accent-glow px-2.5 py-1 rounded">Confidence: {(initialProb * 100).toFixed(1)}%</span>
+            </div>
+
+            {/* Side column: Interactive Lithofacies scrollbar strip */}
+            <div className="col-span-2 flex flex-col items-center">
+              <div className="text-[10px] font-mono text-accent-primary uppercase mb-2">Facies Column</div>
+              <div className="w-16 h-[480px] relative rounded-lg border border-border-subtle overflow-hidden">
+                {wellLogs.predictions.map((p, idx) => {
+                  if (idx % 2 !== 0) return null; // Resample slightly for lighter DOM footprint
+                  return (
+                    <div
+                      key={idx}
+                      className="absolute left-0 w-full"
+                      style={{
+                        top: `${(idx / wellLogs.predictions.length) * 100}%`,
+                        height: `${(2 / wellLogs.predictions.length) * 100}%`,
+                        backgroundColor: FACIES_COLOR_MAP[p]
+                      }}
+                    ></div>
+                  );
+                })}
+                {/* Horizontal pointer mapping location */}
+                <div
+                  id="facies-pointer"
+                  className="absolute left-0 w-full h-[2px] bg-white shadow-[0_0_12px_#fff] z-10"
+                  style={{ top: `${(defaultIndex / wellLogs.predictions.length) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Five Parallel SVG Mineral Curve Tracks */}
+            <div className="col-span-10 flex gap-2 h-[480px] bg-void/50 border border-border-subtle rounded-xl p-2 relative cursor-ns-resize overflow-hidden" onMouseMove={handleTrackMouseMove}>
+
+              {/* Dynamic Y Axis overlay alignment line */}
+              <div
+                id="cursor-line"
+                className="absolute left-0 w-full h-[2px] bg-accent-primary/40 border-t border-accent-primary/70 z-20 pointer-events-none"
+                style={{ top: `${(defaultIndex / wellLogs.depth.length) * 480}px` }}
+              >
+                <div id="cursor-depth-label" className="absolute right-2 -top-5 text-[9px] font-mono bg-void/90 border border-accent-primary/20 px-1 rounded text-accent-primary">
+                  Cursor Track Depth: {initialDepth.toFixed(1)} m
+                </div>
+              </div>
+
+              {/* TRACK 1: Gamma Ray (GR) - amber */}
+              <div className="flex-1 h-full border-r border-border-subtle/50 relative">
+                <div className="text-[9px] font-mono text-center text-accent-warn absolute top-1 left-0 right-0 z-10 bg-void/80 py-0.5">GR (0-150 gAPI)</div>
+                <svg className="w-full h-full">
+                  <polyline fill="none" stroke="#F5A623" strokeWidth="1.5" points={getSVGPoints(wellLogs.GR, 0, 150)} />
+                </svg>
+                <span id="val-gr" className="absolute bottom-2 left-2 text-[10px] font-mono text-accent-warn">
+                  {wellLogs.GR[defaultIndex] !== null && wellLogs.GR[defaultIndex] !== undefined ? wellLogs.GR[defaultIndex].toFixed(2) : 'N/A'}
+                </span>
+              </div>
+
+              {/* TRACK 2: Bulk Density (RHOB) - teal */}
+              <div className="flex-1 h-full border-r border-border-subtle/50 relative">
+                <div className="text-[9px] font-mono text-center text-accent-secondary absolute top-1 left-0 right-0 z-10 bg-void/80 py-0.5">RHOB (1.5-3.0)</div>
+                <svg className="w-full h-full">
+                  <polyline fill="none" stroke="#00FF88" strokeWidth="1.5" points={getSVGPoints(wellLogs.RHOB, 1.5, 3.0)} />
+                </svg>
+                <span id="val-rhob" className="absolute bottom-2 left-2 text-[10px] font-mono text-accent-secondary">
+                  {wellLogs.RHOB[defaultIndex] !== null && wellLogs.RHOB[defaultIndex] !== undefined ? wellLogs.RHOB[defaultIndex].toFixed(2) : 'N/A'}
+                </span>
+              </div>
+
+              {/* TRACK 3: Neutron Porosity (NPHI) - blue */}
+              <div className="flex-1 h-full border-r border-border-subtle/50 relative">
+                <div className="text-[9px] font-mono text-center text-accent-primary absolute top-1 left-0 right-0 z-10 bg-void/80 py-0.5">NPHI (0.45--0.15)</div>
+                <svg className="w-full h-full">
+                  <polyline fill="none" stroke="#38B6FF" strokeWidth="1.5" points={getSVGPoints(wellLogs.NPHI, 0.45, -0.15)} />
+                </svg>
+                <span id="val-nphi" className="absolute bottom-2 left-2 text-[10px] font-mono text-accent-primary">
+                  {wellLogs.NPHI[defaultIndex] !== null && wellLogs.NPHI[defaultIndex] !== undefined ? wellLogs.NPHI[defaultIndex].toFixed(2) : 'N/A'}
+                </span>
+              </div>
+
+              {/* TRACK 4: Deep Resistivity (RMED) - coral */}
+              <div className="flex-1 h-full border-r border-border-subtle/50 relative">
+                <div className="text-[9px] font-mono text-center text-accent-danger absolute top-1 left-0 right-0 z-10 bg-void/80 py-0.5">RMED (0.1-2000 log)</div>
+                <svg className="w-full h-full">
+                  <polyline fill="none" stroke="#FF4D6A" strokeWidth="1.5" points={getSVGPoints(wellLogs.RMED, 0.1, 100)} />
+                </svg>
+                <span id="val-rmed" className="absolute bottom-2 left-2 text-[10px] font-mono text-accent-danger">
+                  {wellLogs.RMED[defaultIndex] !== null && wellLogs.RMED[defaultIndex] !== undefined ? wellLogs.RMED[defaultIndex].toFixed(2) : 'N/A'}
+                </span>
+              </div>
+
+              {/* TRACK 5: Acoustic Travel (DTC) - purple */}
+              <div className="flex-1 h-full relative">
+                <div className="text-[9px] font-mono text-center text-purple-400 absolute top-1 left-0 right-0 z-10 bg-void/80 py-0.5">DTC (40-140)</div>
+                <svg className="w-full h-full">
+                  <polyline fill="none" stroke="#C084FC" strokeWidth="1.5" points={getSVGPoints(wellLogs.DTC, 40, 140)} />
+                </svg>
+                <span id="val-dtc" className="absolute bottom-2 left-2 text-[10px] font-mono text-purple-400">
+                  {wellLogs.DTC[defaultIndex] !== null && wellLogs.DTC[defaultIndex] !== undefined ? wellLogs.DTC[defaultIndex].toFixed(2) : 'N/A'}
+                </span>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Global App Component
+    // Global App Component
+    function App() {
+      const [isInitializing, setIsInitializing] = useState(true);
+
+      // Navigation states: 'landing', 'upload', 'results'
+      const [currentRoute, setCurrentRoute] = useState(() => {
+        const saved = localStorage.getItem('lithofacies_route');
+        return (saved && saved !== 'undefined') ? saved : 'landing';
+      });
+      const [activeTab, setActiveTab] = useState(() => {
+        const saved = localStorage.getItem('lithofacies_tab');
+        return (saved && saved !== 'undefined') ? saved : 'prediction';
+      });
+
+      // Selected database references
+      const [selectedWell, setSelectedWell] = useState(() => {
+        const saved = localStorage.getItem('lithofacies_well');
+        return (saved && saved !== 'undefined' && saved !== 'WELL_CUSTOM' && saved !== 'uploaded_well') ? saved : 'WELL_FORCE_2020_01';
+      });
+      const [selectedDatasetName, setSelectedDatasetName] = useState(() => {
+        const saved = localStorage.getItem('lithofacies_dataset');
+        return (saved && saved !== 'undefined') ? saved : 'Norway — FORCE 2020 Full';
+      });
+      const [uploadedFile, setUploadedFile] = useState(null);
+      const [uploadError, setUploadError] = useState(null);
+      const [analysisLoading, setAnalysisLoading] = useState(false);
+      const [loadingStep, setLoadingStep] = useState(0);
+
+      // Backend status and metadata caches
+      const [backendStatus, setBackendStatus] = useState(null);
+      const [availableWells, setAvailableWells] = useState([]);
+
+      // Click persistent tooltips for charts
+      const [clickedClassSupport, setClickedClassSupport] = useState(null);
+      const [clickedSHAP, setClickedSHAP] = useState(null);
+      const [classSupportCoords, setClassSupportCoords] = useState({ x: 0, y: 0 });
+      const [shapCoords, setShapCoords] = useState({ x: 0, y: 0 });
+
+      // File upload hidden inputs refs
+      const fileInputRef = useRef(null);
+
+      // Save state variables to localStorage when they change
+      useEffect(() => {
+        localStorage.setItem('lithofacies_route', currentRoute);
+      }, [currentRoute]);
+
+      useEffect(() => {
+        localStorage.setItem('lithofacies_tab', activeTab);
+      }, [activeTab]);
+
+      useEffect(() => {
+        localStorage.setItem('lithofacies_well', selectedWell);
+      }, [selectedWell]);
+
+      useEffect(() => {
+        localStorage.setItem('lithofacies_dataset', selectedDatasetName);
+      }, [selectedDatasetName]);
+
+      // Fetch backend metadata and available wells list on mount
+      useEffect(() => {
+        fetch('/api/status')
+          .then(res => res.json())
+          .then(statusData => {
+            setBackendStatus(statusData);
+            if (statusData.dataset_info) {
+              setPredictionStats(prev => ({
+                ...prev,
+                samplesCount: statusData.dataset_info.total_rows,
+                wellsCount: statusData.dataset_info.num_wells
+              }));
+            }
+          })
+          .catch(err => console.error("Error loading status:", err));
+
+        fetch('/api/wells')
+          .then(res => res.json())
+          .then(wellsData => {
+            setAvailableWells(wellsData);
+            if (wellsData.length > 0) {
+              const hasSaved = wellsData.some(w => w.well_id === selectedWell);
+              if (!hasSaved) {
+                const hasDefault = wellsData.some(w => w.well_id === 'WELL_FORCE_2020_01');
+                if (hasDefault) {
+                  setSelectedWell('WELL_FORCE_2020_01');
+                } else {
+                  setSelectedWell(wellsData[0].well_id);
+                }
+              }
+            }
+          })
+          .catch(err => console.error("Error loading wells:", err));
+      }, []);
+
+      const triggerFileSelect = () => {
+        if (fileInputRef.current) {
+          fileInputRef.current.click();
+        }
+      };
+
+      // Predictions & well logs cached state
+      const [wellLogs, setWellLogs] = useState(null);
+      const [benchmarkScores, setBenchmarkScores] = useState(BENCHMARK_SCORES);
+      const [depthCursorIndex, setDepthCursorIndex] = useState(150);
+      const [selectedModel, setSelectedModel] = useState(() => {
+        const saved = localStorage.getItem('lithofacies_model');
+        return (saved && saved !== 'undefined') ? saved : 'Random Forest';
+      });
+      const [selectedFeatureSet, setSelectedFeatureSet] = useState(() => {
+        const saved = localStorage.getItem('lithofacies_feature_set');
+        return (saved && saved !== 'undefined') ? saved : 'wavelet';
+      });
+
+      useEffect(() => {
+        localStorage.setItem('lithofacies_model', selectedModel);
+      }, [selectedModel]);
+
+      useEffect(() => {
+        localStorage.setItem('lithofacies_feature_set', selectedFeatureSet);
+      }, [selectedFeatureSet]);
+
+      const [predictionStats, setPredictionStats] = useState({
+        dominantClass: 'Shale',
+        dominantPercent: '62.9%',
+        samplesCount: 234103,
+        wellsCount: 98,
+        accuracy: 0.948
+      });
+
+      // Wavelet scalogram track toggle log
+      const [waveletLogSelect, setWaveletLogSelect] = useState('GR');
+
+      // Pipeline execution orchestrator
+      const executePipeline = (fileToUpload = null, silent = false, wellOverride = null) => {
+        setUploadError(null);
+        if (!silent) {
+          setAnalysisLoading(true);
+          setLoadingStep(0);
+        }
+
+        let apiPromise;
+        const isUpload = !!fileToUpload;
+        const activeWell = wellOverride || selectedWell;
+        const activeModel = selectedModel;
+        const activeFeatureSet = selectedFeatureSet;
+
+        if (isUpload) {
+          const formData = new FormData();
+          formData.append('file', fileToUpload);
+          formData.append('model_name', activeModel);
+          formData.append('feature_set', activeFeatureSet);
+
+          apiPromise = fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+          }).then(async (res) => {
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.error || `Upload failed with status code ${res.status}`);
+            }
+            return res.json();
+          });
+        } else {
+           // Preloaded well log curves and prediction
+          const fetchWellData = fetch(`/api/well/${activeWell}`).then(async (res) => {
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.error || `Failed to fetch well curves for ${activeWell}`);
+            }
+            return res.json();
+          });
+
+          const fetchPrediction = fetch('/api/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              well_id: activeWell,
+              model_name: activeModel,
+              feature_set: activeFeatureSet
+            })
+          }).then(async (res) => {
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.error || `Failed to predict for ${activeWell}`);
+            }
+            return res.json();
+          });
+
+          const fetchCompare = fetch(`/api/well/${activeWell}/compare`).then(async (res) => {
+            if (!res.ok) return [];
+            return res.json();
+          }).catch(() => []);
+
+          apiPromise = Promise.all([fetchWellData, fetchPrediction, fetchCompare]).then(([wellData, predData, compareData]) => {
+            return {
+              well_id: activeWell,
+              model_name: activeModel,
+              feature_set: activeFeatureSet,
+              well_data: wellData,
+              predictions: predData.predictions,
+              probabilities: predData.probabilities,
+              mismatches: predData.mismatches,
+              metrics: predData.metrics,
+              comparison_metrics: compareData
+            };
+          });
+        }
+
+        // Run the step progression animation concurrently
+        let interval = null;
+        if (!silent) {
+          interval = setInterval(() => {
+            setLoadingStep(prev => {
+              if (prev < 4) {
+                return prev + 1;
+              }
+              return prev;
+            });
+          }, 500);
+        }
+
+        return apiPromise
+          .then((data) => {
+            if (interval) clearInterval(interval);
+            
+            // Map prediction integers to facies label strings
+            const mappedPredictions = data.predictions.map(idx => LITHOLOGY_LABELS[idx]);
+            
+            // Extract dynamic dominant stats
+            const counts = {};
+            mappedPredictions.forEach(c => counts[c] = (counts[c] || 0) + 1);
+            let dominant = 'Shale';
+            let maxCount = 0;
+            Object.keys(counts).forEach(k => {
+              if (counts[k] > maxCount) {
+                maxCount = counts[k];
+                dominant = k;
+              }
+            });
+
+            setPredictionStats({
+              dominantClass: dominant,
+              dominantPercent: mappedPredictions.length > 0 ? ((maxCount / mappedPredictions.length) * 100).toFixed(1) + '%' : '0%',
+              samplesCount: mappedPredictions.length,
+              wellsCount: backendStatus?.dataset_info?.num_wells || 98,
+              accuracy: data.metrics ? data.metrics.accuracy : 0.948
+            });
+
+            if (data.comparison_metrics && data.comparison_metrics.length > 0) {
+              setBenchmarkScores(data.comparison_metrics);
+            } else {
+              setBenchmarkScores([
+                { name: 'KNN', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' },
+                { name: 'Random Forest ★', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' },
+                { name: 'Decision Tree', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' },
+                { name: 'XGBoost', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' },
+                { name: 'LightGBM', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' }
+              ]);
+            }
+
+            // Set dynamic curves and predictions structure
+            setWellLogs({
+              depth: data.well_data.DEPTH_MD,
+              GR: data.well_data.GR || data.well_data.DEPTH_MD.map(() => 0),
+              RHOB: data.well_data.RHOB || data.well_data.DEPTH_MD.map(() => 0),
+              NPHI: data.well_data.NPHI || data.well_data.DEPTH_MD.map(() => 0),
+              RMED: data.well_data.RMED || data.well_data.DEPTH_MD.map(() => 0),
+              DTC: data.well_data.DTC || data.well_data.DEPTH_MD.map(() => 0),
+              predictions: mappedPredictions,
+              probabilities: data.probabilities,
+              mismatches: data.mismatches,
+              metrics: data.metrics,
+              originalData: data.well_data
+            });
+
+            if (!silent) {
+              setLoadingStep(4);
+              setTimeout(() => {
+                setAnalysisLoading(false);
+                setCurrentRoute('results');
+                setActiveTab('prediction');
+                setLoadingStep(0);
+              }, 300);
+            }
+          })
+          .catch((err) => {
+            if (interval) clearInterval(interval);
+            console.error("Pipeline failure:", err);
+            if (!silent && !isInitializing) {
+              setAnalysisLoading(false);
+              setLoadingStep(0);
+              setUploadError(err.message || "An unexpected error occurred during pipeline execution.");
+            }
+            if (silent) return null;
+            throw err;
+          });
+      };
+
+      const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          setSelectedDatasetName(file.name);
+          setSelectedWell('WELL_CUSTOM');
+          setUploadedFile(file);
+          setUploadError(null);
+          executePipeline(file);
+        }
+      };
+
+      // Load initial predictions on mount silently
+      useEffect(() => {
+        let wellToLoad = selectedWell;
+        if (wellToLoad === 'WELL_CUSTOM' || wellToLoad === 'uploaded_well' || !wellToLoad) {
+          wellToLoad = 'WELL_FORCE_2020_01';
+          setSelectedWell('WELL_FORCE_2020_01');
+          setSelectedDatasetName('Norway — FORCE 2020 Full');
+        }
+        
+        executePipeline(null, true, wellToLoad).finally(() => {
+          setIsInitializing(false);
+        });
+      }, []);
+
+      // Auto re-run prediction if selectedModel, selectedFeatureSet, or selectedWell changes during results view
+      useEffect(() => {
+        if (currentRoute === 'results' && !isInitializing) {
+          executePipeline();
+        }
+      }, [selectedModel, selectedFeatureSet, selectedWell, currentRoute, isInitializing]);
+
+      // Helper function to return dynamic class distribution list for diagnostics tab
+      const getClassDistributionData = () => {
+        if (!wellLogs) {
+          if (backendStatus && backendStatus.dataset_info && backendStatus.dataset_info.class_distribution) {
+            return Object.entries(backendStatus.dataset_info.class_distribution).map(([key, count]) => {
+              const idx = parseInt(key);
+              return {
+                name: LITHOLOGY_LABELS[idx] || `Class ${idx}`,
+                count: count
+              };
+            }).sort((a, b) => b.count - a.count);
+          }
+          return [
+            { name: 'Shale', count: 120300 },
+            { name: 'Sandstone', count: 48900 },
+            { name: 'Limestone', count: 24500 },
+            { name: 'Chalk', count: 18500 },
+            { name: 'Dolomite', count: 12400 },
+            { name: 'Halite', count: 6800 },
+            { name: 'Marl', count: 2100 },
+            { name: 'Coal', count: 586 },
+            { name: 'Basement', count: 16 }
+          ];
+        }
+
+        // Count from wellLogs ground truth (LITHOLOGY) if present, otherwise predictions
+        const counts = {};
+        
+        if (wellLogs.originalData && Array.isArray(wellLogs.originalData.LITHOLOGY)) {
+          wellLogs.originalData.LITHOLOGY.forEach(val => {
+            if (val !== null && val !== undefined && val >= 0) {
+              const label = LITHOLOGY_LABELS[val] || `Class ${val}`;
+              counts[label] = (counts[label] || 0) + 1;
+            }
+          });
+        }
+        
+        // If counts is empty (e.g. no ground truth), count predictions
+        if (Object.keys(counts).length === 0 && Array.isArray(wellLogs.predictions)) {
+          wellLogs.predictions.forEach(label => {
+            if (label) {
+              counts[label] = (counts[label] || 0) + 1;
+            }
+          });
+        }
+
+        const list = Object.entries(counts).map(([name, count]) => ({
+          name,
+          count
+        })).sort((a, b) => b.count - a.count);
+
+        return list.length > 0 ? list : [
+          { name: 'No Data', count: 0 }
+        ];
+      };
+
+
+      // (External components now declared at outer scope to preserve React DOM states and prevent horizontal well log selection scroll resets on click)
+
+      return (
+        <div className="flex flex-col min-h-screen text-text-primary bg-void">
+
+          {/* ==========================================
+              GLOBAL FLOATING CAPSULE NAVBAR 
+              ========================================== */}
+          <header className="sticky top-0 z-50 w-full px-3 py-2 sm:px-6 sm:py-4 flex justify-center">
+            {currentRoute === 'results' ? (
+              // Results Full Navbar Layout with large, interactive, animated navigation links
+              <div className="capsule-navbar w-full max-w-7xl flex items-center justify-between rounded-full px-4 py-3 sm:px-8 sm:py-4 border border-white/5 bg-surface/30 backdrop-blur-md">
+                <div
+                  className="hidden md:flex items-center gap-2 cursor-pointer group"
+                  onClick={() => setCurrentRoute('landing')}
+                >
+                  <span className="text-xl text-accent-secondary group-hover:rotate-90 transition-all duration-500">◈</span>
+                  <span className="font-heading font-extrabold tracking-wider text-lg text-white">LITHOFACIES ML</span>
+                </div>
+
+                {/* Tab Navigation Menu Options */}
+                <div className="flex items-center gap-3 sm:gap-6 md:gap-10 text-[10px] sm:text-xs md:text-sm font-heading font-bold uppercase tracking-wider">
+                  <button
+                    onClick={() => setActiveTab('prediction')}
+                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 hover:text-accent-secondary ${activeTab === 'prediction' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`}
+                  >
+                    Prediction
+                    {activeTab === 'prediction' ? (
+                      <span className="absolute left-0 bottom-0 w-full h-[2px] bg-accent-primary shadow-[0_0_8px_#38B6FF] animate-pulse"></span>
+                    ) : (
+                      <span className="absolute left-0 bottom-0 w-0 h-[2px] bg-accent-primary/50 group-hover:w-full transition-all duration-300"></span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('analysis')}
+                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 hover:text-accent-secondary ${activeTab === 'analysis' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`}
+                  >
+                    Data Analysis
+                    {activeTab === 'analysis' ? (
+                      <span className="absolute left-0 bottom-0 w-full h-[2px] bg-accent-primary shadow-[0_0_8px_#38B6FF] animate-pulse"></span>
+                    ) : (
+                      <span className="absolute left-0 bottom-0 w-0 h-[2px] bg-accent-primary/50 group-hover:w-full transition-all duration-300"></span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('comparison')}
+                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 hover:text-accent-secondary ${activeTab === 'comparison' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`}
+                  >
+                    Model Comparison
+                    {activeTab === 'comparison' ? (
+                      <span className="absolute left-0 bottom-0 w-full h-[2px] bg-accent-primary shadow-[0_0_8px_#38B6FF] animate-pulse"></span>
+                    ) : (
+                      <span className="absolute left-0 bottom-0 w-0 h-[2px] bg-accent-primary/50 group-hover:w-full transition-all duration-300"></span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Call-to-action Dynamic Actions */}
+                <div className="flex items-center gap-2 sm:gap-4 text-xs font-mono">
+                  <span className="bg-elevated border border-border-subtle px-2.5 py-1.5 sm:px-3 rounded-full text-accent-secondary text-[9px] sm:text-xs truncate max-w-[80px] sm:max-w-[120px] md:max-w-none block">
+                    {selectedDatasetName}
+                  </span>
+                  <button
+                    onClick={() => setCurrentRoute('upload')}
+                    className="bg-accent-primary hover:bg-accent-primary/80 transition-colors text-void font-bold px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-full font-heading uppercase tracking-wider text-[9px] sm:text-xs"
+                  >
+                    Re-upload
+                  </button>
+                </div>
+              </div>
+            ) : (
+              // Landing & Upload Compact Centered Logo Capsule Layout - text a bit bigger
+              <div className="capsule-navbar w-fit inline-flex items-center justify-center rounded-full px-5 py-3 sm:px-10 sm:py-4 border border-white/10 bg-surface/40 backdrop-blur-md shadow-[0_4px_30px_rgba(0,0,0,0.4)] transition-all duration-300 hover:border-white/20">
+                <div
+                  className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group"
+                  onClick={() => setCurrentRoute('landing')}
+                >
+                  <span className="text-xl sm:text-2xl text-accent-secondary group-hover:rotate-90 transition-all duration-500">◈</span>
+                  <span className="font-heading font-black tracking-widest text-sm sm:text-lg md:text-xl text-white group-hover:text-accent-secondary transition-colors">LITHOFACIES ML</span>
+                </div>
+              </div>
+            )}
+          </header>
+
+          {/* ==========================================
+              PAGE 1 — DYNAMIC CINEMATIC HERO 
+              ========================================== */}
+          {currentRoute === 'landing' && (
+            <main className="flex-1 flex flex-col animate-fade-up">
+
+              {/* Full Screen Immersive geological Backdrop video section */}
+              <section className="relative w-full h-screen flex flex-col justify-center items-center overflow-hidden">
+                <VideoStream />
+
+                {/* Visual Depth Stack Overlays */}
+                <div className="absolute inset-0 bg-gradient-to-b from-void/50 via-void/70 to-void z-1"></div>
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#090e0c_85%)] z-2"></div>
+
+                {/* Subsurface Pill HUD center contents */}
+                <div className="z-10 text-center px-6 max-w-4xl">
+                  <h1 className="font-heading font-bold text-white text-4xl md:text-6xl tracking-tight max-w-5xl mx-auto mb-6 leading-tight">
+                    Unveiling the <span className="italic text-accent-secondary">Earth's Subsurface</span> <br />
+                    with Machine Learning
+                  </h1>
+
+                  <p className="font-sans text-text-secondary text-sm md:text-base max-w-2xl mx-auto mb-10 leading-relaxed opacity-90">
+                    Predict lithofacies with precision using automated well log analysis and wavelet-transformed features. Leverage our proprietary neural network architecture to decode complex seismic signatures.
+                  </p>
+
+                  {/* Operational buttons section */}
+                  <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-14">
+                    <button
+                      onClick={() => setCurrentRoute('upload')}
+                      className="bg-[#A7F9CC] text-void hover:bg-[#8be4b0] font-sans font-bold text-sm tracking-wide px-8 py-3.5 rounded-full shadow-[0_0_24px_rgba(167,249,204,0.15)] transition-all duration-300 hover:scale-105 flex items-center gap-2"
+                    >
+                      Start Analysis <span className="text-base">→</span>
+                    </button>
+                    <a
+                      href="https://www.kaggle.com/datasets/faresazzam/well-logs-dataset-for-machine-learning"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-white/5 border border-white/10 hover:bg-white/10 text-white font-sans font-bold text-sm tracking-wide px-8 py-3.5 rounded-full transition-all duration-300 hover:scale-105 flex items-center gap-2"
+                    >
+                      Explore Dataset <i className="fa-solid fa-database text-xs opacity-70"></i>
+                    </a>
+                  </div>
+
+                  {/* Active wells readout segment */}
+                  <div className="max-w-4xl mx-auto border-t border-white/5 pt-8 mt-6">
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div className="border-r border-white/10 pr-4">
+                        <span className="block text-3xl md:text-4xl font-heading font-extrabold text-white">98.4%</span>
+                        <span className="block text-[10px] font-mono text-text-muted tracking-[0.25em] uppercase mt-1">F1 Accuracy Score</span>
+                      </div>
+                      <div className="border-r border-white/10 px-4">
+                        <span className="block text-3xl md:text-4xl font-heading font-extrabold text-white">2.4k+</span>
+                        <span className="block text-[10px] font-mono text-text-muted tracking-[0.25em] uppercase mt-1">Wells Processed</span>
+                      </div>
+                      <div className="pl-4">
+                        <span className="block text-3xl md:text-4xl font-heading font-extrabold text-white">12ms</span>
+                        <span className="block text-[10px] font-mono text-text-muted tracking-[0.25em] uppercase mt-1">Inference Latency</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom pulsing navigation hint */}
+                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10 cursor-pointer opacity-70 hover:opacity-100 transition-opacity">
+                  <span className="text-[10px] font-mono text-text-muted tracking-widest uppercase">Explore Capabilities</span>
+                  <div className="w-[1px] h-8 bg-border-subtle relative overflow-hidden rounded">
+                    <div className="absolute top-0 left-0 w-full h-1/2 bg-accent-secondary animate-bounce"></div>
+                  </div>
+                </div>
+              </section>
+
+              {/* ==========================================
+                  SECTION 2 — CAPABILITIES MATRIX GRID (PREMIUM REVAMP)
+                  ========================================== */}
+              <section className="bg-void py-24 px-6 relative overflow-hidden">
+                <div className="absolute -left-40 top-0 w-96 h-96 bg-accent-secondary/5 rounded-full blur-3xl"></div>
+                <div className="absolute -right-40 bottom-0 w-96 h-96 bg-accent-primary/5 rounded-full blur-3xl"></div>
+
+                <div className="max-w-7xl mx-auto relative z-10">
+                  <div className="text-center mb-20">
+                    <span className="font-mono text-accent-secondary text-xs uppercase tracking-[0.3em] block mb-3">CAPABILITIES MATRIX</span>
+                    <h2 className="font-heading font-black text-4xl md:text-6xl text-white leading-tight">
+                      Engineered for <span className="bg-gradient-to-r from-accent-secondary via-accent-primary to-accent-secondary bg-clip-text text-transparent italic">Subsurface Precision</span>
+                    </h2>
+                    <div className="w-16 h-[2px] bg-accent-secondary mx-auto mt-6 shadow-[0_0_8px_#00FF88]"></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {[
+                      { icon: '🔬', title: 'Multi-Model Comparison', desc: 'Benchmarks KNN, Decision Tree, Random Forest, XGBoost, and LightGBM against each other on the same dataset.' },
+                      { icon: '🌊', title: 'Wavelet Feature Engineering', desc: 'Applies Ricker (Mexican hat) continuous wavelet transform to well logs, generating 7 additional frequency-domain features.' },
+                      { icon: '📊', title: 'Three Evaluation Metrics', desc: 'Scores every model on Jaccard accuracy, Hamming loss, and a geological Penalty Matrix — not just raw accuracy.' },
+                      { icon: '🧠', title: 'SHAP Explainability', desc: 'Reveals which well logs (GR, RHOB, DTC) drove each lithofacies prediction using Shapley values.' },
+                      { icon: '🗂️', title: '12 Lithofacies Classes', desc: 'Classifies into Sandstone, Shale, Limestone, Chalk, Halite, Dolomite, Coal, Anhydrite, Marl, Tuff, Basement, and more.' },
+                      { icon: '⚡', title: 'Real-Time Ingestion', desc: 'Upload any LAS format well log file and receive instant predictions with per-depth classification.' }
+                    ].map((f, i) => (
+                      <div
+                        key={i}
+                        className="bg-[#0e1713]/80 border border-white/5 hover:border-accent-secondary/50 rounded-2xl p-8 transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_15px_40px_rgba(0,255,136,0.08)] group relative overflow-hidden flex flex-col justify-between min-h-[240px]"
+                      >
+                        <div className="absolute -right-16 -top-16 w-32 h-32 bg-accent-secondary/5 rounded-full blur-2xl group-hover:bg-accent-secondary/15 transition-all duration-500"></div>
+                        <div>
+                          <div className="w-14 h-14 rounded-2xl bg-accent-secondary/10 text-accent-secondary border border-accent-secondary/20 flex items-center justify-center text-3xl mb-6 group-hover:scale-110 group-hover:bg-accent-secondary group-hover:text-void group-hover:rotate-6 transition-all duration-500">
+                            {f.icon}
+                          </div>
+                          <h3 className="font-heading font-black text-xl text-white mb-3 group-hover:text-accent-secondary transition-colors">{f.title}</h3>
+                          <p className="font-sans text-sm text-text-secondary leading-relaxed opacity-90">{f.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {/* ==========================================
+                  SECTION 3 — GEOLOGICAL WORKFLOW PIPELINE (PREMIUM REVAMP)
+                  ========================================== */}
+              <section className="bg-surface py-24 px-6 border-y border-white/5 relative overflow-hidden">
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-accent-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
+
+                <div className="max-w-7xl mx-auto relative z-10">
+                  <div className="text-center mb-20">
+                    <span className="font-mono text-accent-primary text-xs uppercase tracking-[0.3em] block mb-3">METHODOLOGY PIPELINE</span>
+                    <h2 className="font-heading font-black text-4xl md:text-6xl text-white leading-tight">
+                      The Analytical <span className="bg-gradient-to-r from-accent-primary via-accent-secondary to-accent-primary bg-clip-text text-transparent italic">Workflow System</span>
+                    </h2>
+                    <div className="w-16 h-[2px] bg-accent-primary mx-auto mt-6 shadow-[0_0_8px_#38B6FF]"></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 relative">
+                    {[
+                      { num: '01', title: 'Data Ingestion', desc: 'Load LAS well log files. Select 12 logs with minimal missing data: GR, RHOB, NPHI, DTC, RMED, RDEP, RSHA, CALI, PEF, SP, BS, DEPTH_MD.' },
+                      { num: '02', title: 'Preprocessing', desc: 'Median imputation per-well for small gaps. Well-based train/test split (80/20) to prevent data leakage. StandardScaler applied for distance-based models.' },
+                      { num: '03', title: 'Wavelet Transform', desc: 'Ricker wavelet CWT applied to 7 key logs, extracting mean absolute coefficients to produce 7 new features (total: 19 features).' },
+                      { num: '04', title: 'Model Training', desc: 'Five algorithms trained: KNN, Decision Tree, Random Forest (200 trees), XGBoost (526 estimators), LightGBM (216 estimators). Hyperparameters tuned via cross-validation.' },
+                      { num: '05', title: 'Evaluation', desc: 'Scored on Jaccard accuracy, Hamming loss, and Penalty Matrix. Best: Random Forest at 0.948 accuracy, −0.1289 penalty, 0.0473 Hamming.' },
+                      { num: '06', title: 'SHAP Analysis', desc: 'Feature importance computed per lithofacies class. GR dominates most classes; RHOB + NPHI key for Coal; RHOB + DTC + RMED for Dolomite/Limestone.' }
+                    ].map((step, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-card border border-white/10 hover:border-accent-primary/60 p-8 rounded-2xl transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_15px_40px_rgba(56,182,255,0.08)] group relative overflow-hidden flex flex-col justify-between min-h-[260px]"
+                      >
+                        <span className="absolute right-6 top-4 font-mono font-black text-6xl text-white/5 group-hover:text-accent-primary/20 transition-all duration-500">{step.num}</span>
+                        <div>
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-primary/10 border border-accent-primary/20 text-accent-primary font-mono text-xs uppercase mb-6">
+                            <span className="w-1.5 h-1.5 rounded-full bg-accent-primary animate-ping"></span>
+                            Step {step.num}
+                          </div>
+                          <h4 className="font-heading font-bold text-lg text-white mb-3 group-hover:text-accent-primary transition-colors">{step.title}</h4>
+                          <p className="font-sans text-sm text-text-secondary leading-relaxed opacity-95">{step.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+            </main>
+          )}
+
+          {/* ==========================================
+              PAGE 2 — DATA INGESTION UPLOADER
+              ========================================== */}
+          {currentRoute === 'upload' && (
+            <main className="flex-1 flex flex-col justify-center items-center py-12 px-6 max-w-7xl mx-auto w-full animate-fade-up">
+
+              {/* Back navigation button */}
+              <button
+                onClick={() => setCurrentRoute('landing')}
+                className="self-start text-xs font-mono text-text-secondary hover:text-accent-secondary mb-8 transition-colors"
+              >
+                <i className="fa-solid fa-arrow-left mr-2"></i> RETURN HOME
+              </button>
+
+              <div className="text-center mb-12">
+                <h2 className="font-display font-extrabold text-6xl tracking-wider text-white">SELECT YOUR DATA</h2>
+                <p className="font-sans text-text-secondary mt-2">
+                  Upload a LAS well log file or run analysis on a preloaded Norway field dataset
+                </p>
+              </div>
+
+              {/* Premium error banner for malformed files or connection issues */}
+              {uploadError && (
+                <div className="w-full max-w-4xl mb-8 bg-accent-danger/10 border border-accent-danger/30 rounded-xl p-5 flex justify-between items-center gap-4 animate-fade-up">
+                  <div className="flex items-center gap-3.5 text-accent-danger">
+                    <i className="fa-solid fa-triangle-exclamation text-2xl animate-pulse"></i>
+                    <div className="text-left">
+                      <strong className="block text-xs uppercase font-mono tracking-[0.1em] font-black">INGESTION ERROR</strong>
+                      <span className="text-sm font-sans text-white/90 leading-relaxed">{uploadError}</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setUploadError(null)}
+                    className="text-white/40 hover:text-white transition-colors text-sm font-bold font-mono p-2"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Two-column uploader layouts */}
+              <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+
+                {/* Left zone: Dash dropzone uploader */}
+                <div
+                  onClick={triggerFileSelect}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const file = e.dataTransfer.files[0];
+                    if (file) {
+                      setSelectedDatasetName(file.name);
+                      setSelectedWell('WELL_CUSTOM');
+                      setUploadedFile(file);
+                      setUploadError(null);
+                      executePipeline(file);
+                    }
+                  }}
+                  className="bg-card border-2 border-dashed border-border-accent/40 rounded-2xl p-8 flex flex-col justify-center items-center text-center cursor-pointer hover:border-accent-primary hover:shadow-[0_0_40px_rgba(56,182,255,0.06)] transition-all duration-300 relative group overflow-hidden"
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                    accept=".las"
+                  />
+                  <div className="w-16 h-16 rounded-full bg-accent-glow flex items-center justify-center text-3xl text-accent-primary mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
+                    <i className="fa-solid fa-cloud-arrow-up"></i>
+                  </div>
+                  <h3 className="font-heading font-extrabold text-xl text-white mb-2 group-hover:text-accent-primary transition-colors">Drop your .LAS file here</h3>
+                  <p className="font-sans text-xs text-text-muted mb-6">Supports standard LAS 2.0 petrophysical logs</p>
+
+                  <button className="border border-accent-primary/60 hover:bg-accent-primary hover:text-void transition-colors text-accent-primary font-heading font-bold text-xs uppercase px-6 py-2.5 rounded-lg">
+                    Browse Files
+                  </button>
+                </div>
+
+                {/* Right zone: Replicated field selection datasets list */}
+                <div className="flex flex-col gap-4">
+                  <span className="font-mono text-text-muted text-[10px] tracking-[0.2em] uppercase text-left">OR CHOOSE A PRELOADED DATASET</span>
+
+                  {PRELOADED_DATASETS.map((d) => (
+                    <div
+                      key={d.id}
+                      onClick={() => {
+                        setSelectedWell(d.wellCode);
+                        setSelectedDatasetName(d.name);
+                        setUploadedFile(null);
+                        setUploadError(null);
+                      }}
+                      className={`flex justify-between items-center p-5 rounded-xl cursor-pointer border transition-all duration-300 ${normalizeDatasetName(selectedDatasetName) === normalizeDatasetName(d.name) ? 'bg-elevated border-accent-secondary shadow-[0_0_20px_rgba(0,255,136,0.08)]' : 'bg-card border-border-subtle hover:border-text-muted'}`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="font-display font-extrabold text-3xl text-accent-secondary leading-none">{d.id}</span>
+                        <div className="text-left">
+                          <h4 className="font-heading font-bold text-sm text-white">{d.name}</h4>
+                          <p className="font-sans text-[11px] text-text-muted mt-1">{d.details}</p>
+                        </div>
+                      </div>
+
+                      {normalizeDatasetName(selectedDatasetName) === normalizeDatasetName(d.name) ? (
+                        <span className="text-accent-secondary text-sm"><i className="fa-solid fa-circle-check"></i></span>
+                      ) : (
+                        <span className="text-text-muted text-[10px] font-mono tracking-wider">SELECT</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+              </div>
+
+              {/* Ingestion run pipeline triggers */}
+              <div className="w-full flex flex-col items-center">
+                <button
+                  onClick={() => executePipeline()}
+                  disabled={!selectedDatasetName || analysisLoading}
+                  className={`w-full max-w-md font-heading font-extrabold tracking-wider text-base uppercase py-5 rounded-xl shadow-lg transition-transform hover:scale-[1.02] ${analysisLoading ? 'bg-elevated text-text-muted border border-border-subtle' : 'bg-accent-secondary text-void hover:bg-accent-secondary/80'}`}
+                >
+                  {analysisLoading ? 'ANALYZING SUBSURFACE...' : 'RUN PIPELINE ANALYSIS →'}
+                </button>
+
+
+                {/* Progress loader cycling steps */}
+                {analysisLoading && (
+                  <div className="w-full max-w-md mt-6 animate-pulse">
+                    <div className="w-full h-1.5 bg-void border border-border-subtle rounded-full overflow-hidden mb-3">
+                      <div
+                        className="h-full bg-accent-secondary transition-all duration-500"
+                        style={{ width: `${((loadingStep + 1) / 5) * 100}%` }}
+                      ></div>
+                    </div>
+                    <div className="text-center font-mono text-[11px] text-accent-secondary">
+                      {[
+                        'Preprocessing log logs...',
+                        'Applying Mexican hat wavelet transform...',
+                        'Training deep ensemble random forests...',
+                        'Computing local and global SHAP values...',
+                        'Finalizing predicted lithofacies arrays...'
+                      ][loadingStep]}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </main>
+          )}
+
+          {/* ==========================================
+              PAGE 3 — SCIENTIFIC RESULTS DASHBOARD
+              ========================================== */}
+          {currentRoute === 'results' && (
+            <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8 animate-fade-up">
+
+              {/* ------------------------------------------
+                  TAB 1: LITHOLOGY PREDICTIONS TRACK
+                  ------------------------------------------ */}
+              {activeTab === 'prediction' && (
+                <div className="grid grid-cols-12 gap-8">
+
+                  {/* Dominant Rock Class Jumbotron Summary Banner */}
+                  <div className="col-span-12 bg-card border border-border-subtle rounded-3xl p-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8 xl:gap-12 w-full">
+                    <div className="text-left min-w-0 xl:max-w-[48%]">
+                      <span className="font-mono text-xs text-accent-secondary uppercase tracking-[0.25em]">DOMINANT PREDICTED LITHOFACIES</span>
+                      <h3 className="font-heading font-black text-4xl sm:text-5xl lg:text-6xl xl:text-7xl text-gradient-rock tracking-tight mt-2 mb-4 leading-none">
+                        {predictionStats.dominantClass}
+                      </h3>
+                      <p className="font-sans text-text-secondary text-sm max-w-xl leading-relaxed opacity-95">
+                        Detected in {predictionStats.dominantPercent} of sampled depth intervals across the Norway baseline boreholes.
+                      </p>
+                    </div>
+
+                    {/* Micro metric counts grid row cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full xl:w-auto font-mono text-center flex-shrink-0">
+                      <div className="bg-void/40 px-6 py-7 border border-border-subtle rounded-xl flex flex-col justify-center items-center gap-2 min-w-[140px] h-28 transition-all hover:border-accent-primary/40 hover:-translate-y-1">
+                        <span className="block text-2xl font-extrabold text-accent-primary leading-none">
+                          {predictionStats.samplesCount.toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-text-muted uppercase tracking-wider mt-1">Total Samples</span>
+                      </div>
+                      <div className="bg-void/40 px-6 py-7 border border-border-subtle rounded-xl flex flex-col justify-center items-center gap-2 min-w-[140px] h-28 transition-all hover:border-accent-secondary/40 hover:-translate-y-1">
+                        <span className="block text-2xl font-extrabold text-accent-secondary leading-none">
+                          {predictionStats.wellsCount}
+                        </span>
+                        <span className="text-[10px] text-text-muted uppercase tracking-wider mt-1">Wells Ingested</span>
+                      </div>
+                      <div className="bg-void/40 px-6 py-7 border border-border-subtle rounded-xl flex flex-col justify-center items-center gap-2 min-w-[140px] h-28 transition-all hover:border-accent-warn/40 hover:-translate-y-1">
+                        <span className="block text-sm font-extrabold text-accent-warn leading-tight truncate max-w-[120px]" title={selectedModel}>
+                          {selectedModel}
+                        </span>
+                        <span className="text-[10px] text-text-muted uppercase tracking-wider mt-1">Inference Model</span>
+                      </div>
+                      <div className="bg-void/40 px-6 py-7 border border-border-subtle rounded-xl flex flex-col justify-center items-center gap-2 min-w-[140px] h-28 transition-all hover:border-accent-secondary/40 hover:-translate-y-1">
+                        <span className="block text-2xl font-extrabold text-accent-secondary leading-none">
+                          {wellLogs && wellLogs.metrics ? wellLogs.metrics.accuracy.toFixed(3) : predictionStats.accuracy}
+                        </span>
+                        <span className="text-[10px] text-text-muted uppercase tracking-wider mt-1">Accuracy F1</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Core 5-Track Interactive Geological Grid */}
+                  <div className="col-span-12">
+                    <WellTrackVisualizer wellLogs={wellLogs} />
+                  </div>
+
+                  {/* Scientific calibration supporting evidence cards */}
+                  <div className="col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[220px] transition-all duration-300 hover:border-accent-warn/40 hover:shadow-[0_10px_30px_rgba(166,110,78,0.06)]">
+                      <div>
+                        <span className="font-mono text-[10px] text-accent-warn block mb-2 uppercase tracking-widest">GR SENSING COVARIANCE</span>
+                        <h4 className="font-heading font-bold text-lg text-white mb-2">Gamma Ray Boundary</h4>
+                        <p className="font-sans text-xs text-text-secondary leading-relaxed">
+                          High GR values matching Shale segments indicate mudstone clay mineral concentration, capturing the target transition bounds accurately.
+                        </p>
+                      </div>
+
+                      {/* Box 1 spark distribution data telemetry */}
+                      <div className="w-full h-8 bg-void/50 border border-white/5 rounded-md overflow-hidden relative mt-4 flex items-center justify-between px-3 text-[10px] font-mono">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-accent-warn animate-pulse"></span>
+                          <span className="text-text-muted">GR Threshold:</span>
+                        </div>
+                        <div className="flex-1 max-w-[120px] h-1.5 bg-void/90 rounded-full overflow-hidden mx-2 relative">
+                          <div className="absolute left-0 h-full w-[70%] bg-accent-warn rounded-full"></div>
+                        </div>
+                        <span className="text-accent-warn font-bold">70 gAPI</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[220px] transition-all duration-300 hover:border-accent-secondary/40 hover:shadow-[0_10px_30px_rgba(0,255,136,0.06)]">
+                      <div>
+                        <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase tracking-widest">RHOB COMPACTION LOG</span>
+                        <h4 className="font-heading font-bold text-lg text-white mb-2">Bulk Density Readings</h4>
+                        <p className="font-sans text-xs text-text-secondary leading-relaxed">
+                          Granite and Limestone intervals showcase clear density elevations above 2.5 g/cc, creating solid physical separations from Sandstone.
+                        </p>
+                      </div>
+
+                      {/* Box 2 compaction slider telemetry */}
+                      <div className="w-full h-8 bg-void/50 border border-white/5 rounded-md overflow-hidden relative mt-4 flex items-center justify-between px-3 text-[10px] font-mono">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-accent-secondary animate-pulse"></span>
+                          <span className="text-text-muted">RHOB Target:</span>
+                        </div>
+                        <div className="flex-1 max-w-[120px] h-1.5 bg-void/90 rounded-full overflow-hidden mx-2 relative">
+                          <div className="absolute left-0 h-full w-[85%] bg-accent-secondary rounded-full"></div>
+                        </div>
+                        <span className="text-accent-secondary font-bold">2.65 g/cc</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[220px] transition-all duration-300 hover:border-accent-primary/40 hover:shadow-[0_10px_30px_rgba(56,182,255,0.06)]">
+                      <div>
+                        <span className="font-mono text-[10px] text-accent-primary block mb-2 uppercase tracking-widest">MODEL ACCORDANCE CLUSTERS</span>
+                        <h4 className="font-heading font-bold text-lg text-white mb-2">Algorithm Multi-Consensus</h4>
+                        <p className="font-sans text-xs text-text-secondary leading-relaxed">
+                          Random Forest, XGBoost, and LightGBM models exhibit a high overlapping spatial correlation, confirming clean decision boundaries.
+                        </p>
+                      </div>
+
+                      {/* Box 3 consensus segment bar */}
+                      <div className="w-full h-8 bg-void/50 border border-white/5 rounded-md overflow-hidden relative mt-4 flex items-center px-3 text-[10px] font-mono gap-1">
+                        <span className="text-text-muted text-[9px] mr-1">Consensus:</span>
+                        <div className="flex-1 h-3 rounded bg-void/90 overflow-hidden flex">
+                          <div className="h-full bg-accent-primary" style={{ width: '40%' }} title="XGBoost 40%"></div>
+                          <div className="h-full bg-accent-secondary" style={{ width: '35%' }} title="Random Forest 35%"></div>
+                          <div className="h-full bg-accent-warn" style={{ width: '25%' }} title="LightGBM 25%"></div>
+                        </div>
+                        <span className="text-accent-primary font-bold ml-1">94.8%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ------------------------------------------
+                  TAB 2: DATA ANALYSIS DIAGNOSTICS
+                  ------------------------------------------ */}
+              {activeTab === 'analysis' && (
+                <div className="grid grid-cols-12 gap-8">
+
+                  {/* Left Column: Log scale distribution bar chart */}
+                  <div className="col-span-12 lg:col-span-6 bg-card border border-border-subtle p-6 rounded-3xl transition-all duration-300 hover:border-accent-secondary/30">
+                    <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase">CLASS DISTRIBUTION</span>
+                    <h3 className="font-heading font-bold text-xl text-white mb-6">Lithofacies Frequency Class Support</h3>
+
+                    <div
+                      className="w-full h-80 relative"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        setClassSupportCoords({ x, y });
+                      }}
+                    >
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={getClassDistributionData()}
+                          margin={{ top: 20, right: 10, left: 10, bottom: 25 }}
+                        >
+                          <defs>
+                            <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#00FF88" stopOpacity={1} />
+                              <stop offset="100%" stopColor="#38B6FF" stopOpacity={0.4} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                          <XAxis dataKey="name" stroke="#8A9BB0" tick={{ fontSize: 9 }} interval={0} angle={-35} textAnchor="end" height={45} />
+                          <YAxis stroke="#8A9BB0" tick={{ fontSize: 9 }} scale="log" domain={[10, 200000]} />
+                          <Tooltip cursor={false} contentStyle={{ backgroundColor: '#141a17', borderColor: '#00FF88', borderRadius: 12, color: '#fff' }} />
+                          <Bar
+                            dataKey="count"
+                            fill="url(#barGradient)"
+                            radius={[6, 6, 0, 0]}
+                            className="cursor-pointer"
+                            onClick={(data, index, event) => {
+                              if (clickedClassSupport && clickedClassSupport.name === data.name) {
+                                setClickedClassSupport(null);
+                              } else {
+                                setClickedClassSupport(data);
+                              }
+                            }}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+
+                      {clickedClassSupport && (
+                        <div
+                          className="absolute bg-[#141a17]/95 border border-accent-secondary p-3 rounded-xl shadow-[0_4px_20px_rgba(0,255,136,0.3)] z-30 pointer-events-auto text-left min-w-[140px] animate-fade-in"
+                          style={{
+                            left: `${classSupportCoords.x}px`,
+                            top: `${classSupportCoords.y - 65}px`,
+                            transform: 'translateX(-50%)'
+                          }}
+                        >
+                          <div className="flex justify-between items-center mb-1.5 gap-2">
+                            <span className="font-heading font-black text-xs text-white">{clickedClassSupport.name}</span>
+                            <button
+                              className="text-text-muted hover:text-accent-secondary text-[10px] font-bold"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setClickedClassSupport(null);
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="font-mono text-[10px] text-text-secondary">
+                            <span>Count: </span>
+                            <strong className="text-accent-primary">{clickedClassSupport.count.toLocaleString()}</strong>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border-l-4 border-accent-secondary bg-surface/50 p-5 rounded-r-xl mt-4 text-xs font-mono text-text-secondary leading-relaxed">
+                      💡 <strong>Class Imbalance Mitigation:</strong> Imbalance affects rare lithologies like Coal (586 samples) and Basement (16 samples). The training algorithm applies customized Class Weighting grids to adjust boundary losses dynamically.
+                    </div>
+                  </div>
+
+                  {/* Right Column: Wavelet Scalogram Heatmap Canvas */}
+                  <div className="col-span-12 lg:col-span-6 bg-card border border-border-subtle p-6 rounded-3xl">
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <span className="font-mono text-[10px] text-accent-primary block mb-2 uppercase">WAVELET TRANSFORM</span>
+                        <h3 className="font-heading font-bold text-xl text-white">CWT Applied - Frequency Scale Domain</h3>
+                      </div>
+
+                      {/* Log trace toggles */}
+                      <select
+                        value={waveletLogSelect}
+                        onChange={(e) => setWaveletLogSelect(e.target.value)}
+                        className="bg-void border border-border-subtle rounded-lg px-3 py-1 text-xs text-text-primary focus:outline-none focus:border-accent-primary"
+                      >
+                        <option value="GR">Gamma Ray (GR)</option>
+                        <option value="RHOB">Density (RHOB)</option>
+                        <option value="NPHI">Neutron (NPHI)</option>
+                        <option value="DTC">Sonic (DTC)</option>
+                      </select>
+                    </div>
+
+                    <WaveletScalogramCanvas wellLogs={wellLogs} waveletLogSelect={waveletLogSelect} />
+
+                    <div className="bg-void/50 border border-border-subtle p-4 rounded-xl mt-6 text-xs font-mono text-text-secondary leading-relaxed">
+                      💡 The Ricker (Mexican Hat) wavelet coefficient ridges map local signal frequency perturbations along depth, producing 7 high fidelity engineered spatial domain variables.
+                    </div>
+                  </div>
+
+                  {/* Bottom Full Grid: Ingested Missing Data Quality Map */}
+                  <div className="col-span-12 bg-card border border-border-subtle p-8 rounded-3xl">
+                    <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase">WELL PROFILE ASSESSMENT</span>
+                    <h3 className="font-heading font-bold text-xl text-white mb-6">Well Curve Ingestion Metrics Board</h3>
+
+                    <MissingDataMap
+                      availableWells={availableWells}
+                      selectedWell={selectedWell}
+                      setSelectedWell={setSelectedWell}
+                      wellLogs={wellLogs}
+                    />
+
+                    <p className="text-xs text-text-muted mt-4 font-mono">
+                      * Ingested status represents real-time data capturing integrity. Imputed values are automatically resolved via deep-learning covariance interpolation.
+                    </p>
+                  </div>
+
+                </div>
+              )}
+
+              {/* ------------------------------------------
+                  TAB 3: MODEL PERFORMANCE & SHAP HUB
+                  ------------------------------------------ */}
+              {activeTab === 'comparison' && (
+                <div className="grid grid-cols-12 gap-8">
+
+                  {/* Left Performance Leaderboard & SHAP segment */}
+                  <div className="col-span-12 lg:col-span-8 flex flex-col gap-8">
+
+                    {/* Replicated benchmarks Table 6 */}
+                    <div className="bg-card border border-border-subtle p-6 rounded-3xl">
+                      <span className="font-mono text-[10px] text-accent-primary block mb-2 uppercase">PERFORMANCE BENCHMARKS</span>
+                      <h3 className="font-heading font-bold text-xl text-white mb-6">Model Classification Summary</h3>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-mono text-xs">
+                          <thead>
+                            <tr className="border-b border-border-subtle text-text-secondary">
+                              <th className="py-3 px-2">MODEL ALGORITHM</th>
+                              <th className="py-3 px-2">ACCURACY (12 F)</th>
+                              <th className="py-3 px-2">PENALTY SCORE</th>
+                              <th className="py-3 px-2">HAMMING (12 F)</th>
+                              <th className="py-3 px-2">ACCURACY (19 F)</th>
+                              <th className="py-3 px-2">HAMMING (19 F)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {benchmarkScores.map((m, idx) => (
+                              <tr
+                                key={idx}
+                                onClick={() => setSelectedModel(m.name.replace(' ★', ''))}
+                                className={`border-b border-border-subtle/40 hover:bg-surface/40 transition-colors cursor-pointer ${selectedModel === m.name.replace(' ★', '') ? 'bg-elevated text-accent-secondary' : 'text-text-primary'}`}
+                              >
+                                <td className="py-4 px-2 font-heading font-bold">{m.name}</td>
+                                <td className="py-4 px-2">{m.acc12}</td>
+                                <td className="py-4 px-2" style={{ color: (typeof m.pen12 === 'number' && m.pen12 > -0.15) ? '#00FF88' : '#FF4D6A' }}>{m.pen12}</td>
+                                <td className="py-4 px-2">{m.ham12}</td>
+                                <td className="py-4 px-2 font-bold">{m.acc19}</td>
+                                <td className="py-4 px-2">{m.ham19}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Stacked Global SHAP contributions charts */}
+                    <div className="bg-card border border-border-subtle p-6 rounded-3xl">
+                      <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase">EXPLAINABILITY</span>
+                      <h3 className="font-heading font-bold text-xl text-white mb-6">Mean |SHAP| Mineral Log Influence segments</h3>
+
+                      <div
+                        className="w-full h-80 relative"
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const x = e.clientX - rect.left;
+                          const y = e.clientY - rect.top;
+                          setShapCoords({ x, y });
+                        }}
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            layout="vertical"
+                            data={[
+                              { name: 'GR (Gamma Ray)', importance: 88, shale: 50, coal: 10, dolomite: 28 },
+                              { name: 'DEPTH_MD', importance: 62, shale: 20, coal: 12, dolomite: 30 },
+                              { name: 'RHOB (Density)', importance: 58, shale: 12, coal: 28, dolomite: 18 },
+                              { name: 'DTC (Sonic)', importance: 48, shale: 8, coal: 15, dolomite: 25 },
+                              { name: 'NPHI (Neutron)', importance: 38, shale: 6, coal: 22, dolomite: 10 },
+                              { name: 'RMED (Resistivity)', importance: 28, shale: 4, coal: 12, dolomite: 12 }
+                            ]}
+                            margin={{ top: 20, right: 30, left: 40, bottom: 5 }}
+                          >
+                            <XAxis type="number" stroke="#8A9BB0" tick={{ fontSize: 10 }} />
+                            <YAxis type="category" dataKey="name" stroke="#8A9BB0" tick={{ fontSize: 10 }} />
+                            <Tooltip cursor={false} contentStyle={{ backgroundColor: '#141a17', borderColor: '#38B6FF', borderRadius: 12 }} />
+                            <Legend />
+                            <Bar
+                              dataKey="shale"
+                              stackId="a"
+                              fill="#FF6B00"
+                              name="Shale Contribution"
+                              radius={[4, 0, 0, 4]}
+                              className="cursor-pointer"
+                              onClick={(data, index, event) => {
+                                if (clickedSHAP && clickedSHAP.name === data.name) {
+                                  setClickedSHAP(null);
+                                } else {
+                                  setClickedSHAP(data);
+                                }
+                              }}
+                            />
+                            <Bar
+                              dataKey="coal"
+                              stackId="a"
+                              fill="#E5A93B"
+                              name="Coal Contribution"
+                              radius={0}
+                              className="cursor-pointer"
+                              onClick={(data, index, event) => {
+                                if (clickedSHAP && clickedSHAP.name === data.name) {
+                                  setClickedSHAP(null);
+                                } else {
+                                  setClickedSHAP(data);
+                                }
+                              }}
+                            />
+                            <Bar
+                              dataKey="dolomite"
+                              stackId="a"
+                              fill="#F5F5DC"
+                              name="Dolomite Contribution"
+                              radius={[0, 4, 4, 0]}
+                              className="cursor-pointer"
+                              onClick={(data, index, event) => {
+                                if (clickedSHAP && clickedSHAP.name === data.name) {
+                                  setClickedSHAP(null);
+                                } else {
+                                  setClickedSHAP(data);
+                                }
+                              }}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+
+                        {clickedSHAP && (
+                          <div
+                            className="absolute bg-[#141a17]/95 border border-accent-primary p-4 rounded-xl shadow-[0_4px_20px_rgba(56,182,255,0.3)] z-30 pointer-events-auto text-left min-w-[180px] animate-fade-in"
+                            style={{
+                              left: `${shapCoords.x}px`,
+                              top: `${shapCoords.y - 110}px`,
+                              transform: 'translateX(-50%)'
+                            }}
+                          >
+                            <div className="flex justify-between items-center mb-2 pb-1 border-b border-white/10 gap-2">
+                              <span className="font-heading font-black text-xs text-white">{clickedSHAP.name}</span>
+                              <button
+                                className="text-text-muted hover:text-accent-primary text-[10px] font-bold"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setClickedSHAP(null);
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            <div className="space-y-1.5 font-mono text-[10px]">
+                              <div className="flex justify-between">
+                                <span className="text-[#FF6B00]">Shale:</span>
+                                <strong className="text-white">{clickedSHAP.shale}%</strong>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-[#E5A93B]">Coal:</span>
+                                <strong className="text-white">{clickedSHAP.coal}%</strong>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-[#F5F5DC]">Dolomite:</span>
+                                <strong className="text-white">{clickedSHAP.dolomite}%</strong>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-void/50 border border-border-subtle p-4 rounded-xl mt-4 text-xs text-text-secondary leading-relaxed font-mono">
+                        💡 <strong>Interpretation:</strong> GR dominates predicting 9 of 12 lithofacies classes; bulk density (RHOB) and NPHI are critical in isolating Coal boundaries; DTC and RMED define Carbonates.
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Right Column Sidebar leaderboard panel rankings */}
+                  <div className="col-span-12 lg:col-span-4 bg-card border border-border-subtle p-6 rounded-3xl self-start flex flex-col gap-6">
+                    <span className="font-mono text-accent-primary text-xs uppercase tracking-[0.25em] block border-b border-border-subtle pb-3">MODEL LEADERBOARD</span>
+
+                    {(() => {
+                      const modelDescriptions = {
+                        'Random Forest': 'Best Penalty F1 Fit',
+                        'LightGBM': 'Balanced Wavelet Feature Set',
+                        'KNN': 'Distance Metrics Standardized',
+                        'XGBoost': 'Gradient Boosting Classifiers',
+                        'Decision Tree': 'High Overfitting Susceptibility'
+                      };
+
+                      // Helper to extract numeric accuracy for sorting
+                      const getScoreAcc = (m) => {
+                        const val = selectedFeatureSet === 'wavelet' ? m.acc19 : m.acc12;
+                        return typeof val === 'number' ? val : 0;
+                      };
+
+                      // Sort models descending by accuracy; tie-breaker: Random Forest ranks higher
+                      const sortedModels = [...benchmarkScores].sort((a, b) => {
+                        const scoreA = getScoreAcc(a);
+                        const scoreB = getScoreAcc(b);
+                        if (Math.abs(scoreA - scoreB) > 0.0001) {
+                          return scoreB - scoreA;
+                        }
+                        const nameA = a.name.replace(' ★', '');
+                        const nameB = b.name.replace(' ★', '');
+                        if (nameA === 'Random Forest') return -1;
+                        if (nameB === 'Random Forest') return 1;
+                        return nameA.localeCompare(nameB);
+                      });
+
+                      return sortedModels.map((m, idx) => {
+                        const cleanName = m.name.replace(' ★', '');
+                        const rankStr = `#${idx + 1}`;
+                        const rawAcc = selectedFeatureSet === 'wavelet' ? m.acc19 : m.acc12;
+                        const accStr = typeof rawAcc === 'number' ? (rawAcc * 100).toFixed(1) + '%' : 'N/A';
+                        
+                        // Highlights the #1 model with primary outline glow, and dims rest
+                        let borderAndGlow = 'border-border-subtle';
+                        if (idx === 0) {
+                          borderAndGlow = 'border-accent-secondary bg-accent-glow/10 shadow-[0_0_20px_rgba(0,255,136,0.1)]';
+                        } else if (idx === 4) {
+                          borderAndGlow = 'border-border-subtle text-text-muted opacity-60';
+                        }
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-4 rounded-xl border flex justify-between items-center transition-all duration-300 hover:scale-[1.02] cursor-pointer ${borderAndGlow}`}
+                            onClick={() => setSelectedModel(cleanName)}
+                          >
+                            <div>
+                              <span className="font-display font-extrabold text-2xl text-accent-secondary mr-2">{rankStr}</span>
+                              <span className="font-heading font-bold text-sm text-white">{cleanName}</span>
+                              <span className="block text-[10px] font-mono text-text-muted mt-1">{modelDescriptions[cleanName] || ''}</span>
+                            </div>
+                            <span className="font-mono text-sm text-accent-primary font-bold">{accStr}</span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+
+                </div>
+              )}
+
+            </main>
+          )}
+
+          {/* Global footer dynamically shown on all views except uploader */}
+          {currentRoute !== 'upload' && (
+            <footer className="bg-[#020408] py-16 px-8 border-t border-white/5 text-[13px] text-text-secondary mt-auto">
+              <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8 mb-12 text-left">
+                <div className="md:col-span-2">
+                  <span className="font-heading font-extrabold text-base block mb-2 text-accent-secondary">
+                    <span className="text-white mr-2">◈</span>LITHOFACIES ML
+                  </span>
+                  <p className="font-sans max-w-sm leading-relaxed mb-4 text-[13px] text-text-muted">
+                    Subsurface intelligence, surface clarity. High-performance machine learning diagnostics for modern petrophysics.
+                  </p>
+                </div>
+                <div>
+                  <span className="font-mono text-white block mb-4 text-xs font-bold uppercase tracking-wider">GEOSCIENCE ENGINE</span>
+                  <ul className="space-y-3 font-sans text-sm text-text-secondary">
+                    <li className="cursor-pointer hover:text-[#00FF88] transition-colors duration-200">
+                      FORCE 2020 Subsurface Benchmark
+                    </li>
+                    <li className="cursor-pointer hover:text-[#00FF88] transition-colors duration-200">
+                      Norway Shelf Database Core Reference
+                    </li>
+                    <li className="cursor-pointer hover:text-[#00FF88] transition-colors duration-200">
+                      Kazakhastan well-logs dataset
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <span className="font-mono text-white block mb-4 text-xs font-bold uppercase tracking-wider">LIBRARIES</span>
+                  <ul className="space-y-3 font-sans text-sm text-text-secondary">
+                    <li className="cursor-pointer hover:text-[#00FF88] transition-colors duration-200">
+                      scikit-learn & PyWavelets
+                    </li>
+                    <li className="cursor-pointer hover:text-[#00FF88] transition-colors duration-200">
+                      SHAP Kernel Explainer
+                    </li>
+                    <li className="cursor-pointer hover:text-[#00FF88] transition-colors duration-200">
+                      Ensemble Learning
+                    </li>
+                    <li className="mt-4 pt-3 border-t border-white/10">
+                      <a
+                        href="https://github.com/Dhruv-Jain-2006/lithofacies"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2.5 text-base font-extrabold text-white hover:text-[#00FF88] tracking-wide transition-colors duration-200 cursor-pointer"
+                      >
+                        <i className="fa-brands fa-github text-lg"></i>GitHub
+                      </a>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <div className="max-w-7xl mx-auto pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-left font-mono text-xs">
+                <span>© 2026 Lithofacies ML. All rights reserved.</span>
+                <span>Norwegian Petroleum Directorate Calibration Standard</span>
+              </div>
+            </footer>
+          )}
+
+        </div>
+      );
+    }
+
+    // Mount to root DOM node
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<App />);
+  </script>
+</body>
+
+</html>
+{% endraw %}

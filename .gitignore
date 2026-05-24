@@ -1,0 +1,22 @@
+# Python temporary files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# User uploads & interim pipeline cache
+data/raw/uploads/*
+!data/raw/uploads/.gitkeep
+data/interim/*
+data/processed/*
+plots/*
+.ipynb_checkpoints/
