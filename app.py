@@ -591,14 +591,6 @@ def upload_las_file():
         if os.path.exists(temp_path):
             os.remove(temp_path)
             
-        # Map values to payload lists (replacing NaNs with None for JSON compliance)
-        payload = {}
-        for col in df_features.columns:
-            if pd.api.types.is_numeric_dtype(df_features[col]):
-                payload[col] = [None if pd.isna(x) else float(x) for x in df_features[col].values]
-            else:
-                payload[col] = df_features[col].values.tolist()
-                
         metrics = None
         mismatches = None
         comparison_metrics = None
@@ -616,32 +608,48 @@ def upload_las_file():
                 }
                 mismatches = (y_true != predictions).astype(int).tolist()
                 
-                # Compute comparison_metrics for all 5 models
+                # Compute comparison_metrics for all 5 models (using downsampled dataset for cloud resource protection)
                 comparison_metrics = []
                 model_names = ['KNN', 'Random Forest', 'Decision Tree', 'XGBoost', 'LightGBM']
                 
+                if len(df_features) > 1000:
+                    df_features_metrics = df_features.iloc[::10].copy()
+                    y_true_metrics = y_true[::10]
+                    valid_mask_metrics = y_true_metrics >= 0
+                    y_true_valid_metrics = y_true_metrics[valid_mask_metrics]
+                else:
+                    df_features_metrics = df_features.copy()
+                    valid_mask_metrics = valid_mask
+                    y_true_valid_metrics = y_true_valid
+                
                 for name in model_names:
                     acc12, pen12, ham12 = 0.0, 0.0, 0.0
-                    if name in models_orig:
-                        model12 = models_orig[name]
-                        X_raw12 = df_features[ORIGINAL_COLS]
-                        X_in12 = scaler_orig.transform(X_raw12) if name == 'KNN' else X_raw12.values
-                        y_pred12 = model12.predict(X_in12).astype(int)[valid_mask]
-                        m12 = get_classification_metrics(y_true_valid, y_pred12, penalty_matrix)
-                        acc12 = float(m12["Accuracy"])
-                        pen12 = float(m12["PenaltyScore"])
-                        ham12 = float(m12["HammingLoss"])
+                    try:
+                        if name in models_orig:
+                            model12 = models_orig[name]
+                            X_raw12 = df_features_metrics[ORIGINAL_COLS]
+                            X_in12 = scaler_orig.transform(X_raw12) if name == 'KNN' else X_raw12.values
+                            y_pred12 = model12.predict(X_in12).astype(int)[valid_mask_metrics]
+                            m12 = get_classification_metrics(y_true_valid_metrics, y_pred12, penalty_matrix)
+                            acc12 = float(m12["Accuracy"])
+                            pen12 = float(m12["PenaltyScore"])
+                            ham12 = float(m12["HammingLoss"])
+                    except Exception as e12:
+                        logger.error(f"Error benchmarking original model {name} on upload: {str(e12)}")
                         
                     acc19, pen19, ham19 = 0.0, 0.0, 0.0
-                    if name in models_wav:
-                        model19 = models_wav[name]
-                        X_raw19 = df_features[WAVELET_COLS]
-                        X_in19 = scaler_wav.transform(X_raw19) if name == 'KNN' else X_raw19.values
-                        y_pred19 = model19.predict(X_in19).astype(int)[valid_mask]
-                        m19 = get_classification_metrics(y_true_valid, y_pred19, penalty_matrix)
-                        acc19 = float(m19["Accuracy"])
-                        pen19 = float(m19["PenaltyScore"])
-                        ham19 = float(m19["HammingLoss"])
+                    try:
+                        if name in models_wav:
+                            model19 = models_wav[name]
+                            X_raw19 = df_features_metrics[WAVELET_COLS]
+                            X_in19 = scaler_wav.transform(X_raw19) if name == 'KNN' else X_raw19.values
+                            y_pred19 = model19.predict(X_in19).astype(int)[valid_mask_metrics]
+                            m19 = get_classification_metrics(y_true_valid_metrics, y_pred19, penalty_matrix)
+                            acc19 = float(m19["Accuracy"])
+                            pen19 = float(m19["PenaltyScore"])
+                            ham19 = float(m19["HammingLoss"])
+                    except Exception as e19:
+                        logger.error(f"Error benchmarking wavelet model {name} on upload: {str(e19)}")
                         
                     comparison_metrics.append({
                         "name": name + " ★" if name == "Random Forest" else name,
@@ -652,16 +660,41 @@ def upload_las_file():
                         "pen19": round(pen19, 4),
                         "ham19": round(ham19, 4)
                     })
+                    
+        # Downsample the visualization payload if the uploaded well is extremely large (> 5000 samples)
+        # to ensure fast network transfer and ultra-smooth browser chart rendering!
+        if len(df_features) > 5000:
+            step = len(df_features) // 5000 + 1
+            df_features_vis = df_features.iloc[::step].copy()
+            predictions_vis = predictions[::step].tolist()
+            max_probs_vis = np.array(max_probs)[::step].tolist()
+            if mismatches is not None:
+                mismatches_vis = np.array(mismatches)[::step].tolist()
+            else:
+                mismatches_vis = None
+        else:
+            df_features_vis = df_features
+            predictions_vis = predictions.tolist()
+            max_probs_vis = max_probs
+            mismatches_vis = mismatches
+            
+        # Map values to payload lists (replacing NaNs with None for JSON compliance)
+        payload = {}
+        for col in df_features_vis.columns:
+            if pd.api.types.is_numeric_dtype(df_features_vis[col]):
+                payload[col] = [None if pd.isna(x) else float(x) for x in df_features_vis[col].values]
+            else:
+                payload[col] = df_features_vis[col].values.tolist()
                 
         return jsonify({
             "well_id": file.filename,
             "model_name": model_name,
             "feature_set": feature_set,
             "well_data": payload,
-            "predictions": predictions.tolist(),
-            "probabilities": max_probs,
+            "predictions": predictions_vis,
+            "probabilities": max_probs_vis,
             "has_ground_truth": has_gt,
-            "mismatches": mismatches,
+            "mismatches": mismatches_vis,
             "metrics": metrics,
             "comparison_metrics": comparison_metrics
         })
