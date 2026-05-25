@@ -245,7 +245,13 @@ def get_well_model_comparison(well_id):
         if len(well_df) == 0:
             return jsonify({"error": f"Well {well_id} not found"}), 404
             
-        y_true = well_df['LITHOLOGY'].fillna(-1).values.astype(int)
+        # Downsample well logs for metrics comparison to avoid Gunicorn timeouts & OOM kills on Free Cloud Tiers
+        if len(well_df) > 1000:
+            well_df_metrics = well_df.iloc[::10].copy()
+        else:
+            well_df_metrics = well_df.copy()
+            
+        y_true = well_df_metrics['LITHOLOGY'].fillna(-1).values.astype(int)
         valid_mask = y_true >= 0
         
         # If no ground truth, we'll return an empty list or placeholders
@@ -265,7 +271,7 @@ def get_well_model_comparison(well_id):
                 acc12, pen12, ham12 = 0.0, 0.0, 0.0
                 if name in models_orig:
                     model12 = models_orig[name]
-                    X_raw12 = well_df[ORIGINAL_COLS]
+                    X_raw12 = well_df_metrics[ORIGINAL_COLS]
                     X_in12 = scaler_orig.transform(X_raw12) if name == 'KNN' else X_raw12.values
                     y_pred12 = model12.predict(X_in12).astype(int)[valid_mask]
                     m12 = get_classification_metrics(y_true_valid, y_pred12, penalty_matrix)
@@ -277,7 +283,7 @@ def get_well_model_comparison(well_id):
                 acc19, pen19, ham19 = 0.0, 0.0, 0.0
                 if name in models_wav:
                     model19 = models_wav[name]
-                    X_raw19 = well_df[WAVELET_COLS]
+                    X_raw19 = well_df_metrics[WAVELET_COLS]
                     X_in19 = scaler_wav.transform(X_raw19) if name == 'KNN' else X_raw19.values
                     y_pred19 = model19.predict(X_in19).astype(int)[valid_mask]
                     m19 = get_classification_metrics(y_true_valid, y_pred19, penalty_matrix)
