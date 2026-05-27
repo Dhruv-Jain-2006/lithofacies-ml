@@ -56,97 +56,286 @@
   <!-- HLS.js for live seismic video stream -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
+  <!-- GSAP + ScrollTrigger for cinematic 60fps scroll animations -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+
   <!-- Recharts & dependencies -->
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
 
   <style>
-    /* Custom Styling Overrides & Global Effects */
+    /* ─── BASE ─────────────────────────────────────────────── */
+    html { scroll-behavior: smooth; }
     body {
       background-color: #090e0c;
       overflow-x: hidden;
       color: #F0F4F8;
     }
 
-    /* Scanline Overlay effect */
+    /* ─── OVERLAYS ─────────────────────────────────────────── */
     .scanline-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%,
-          rgba(0, 0, 0, 0.25) 50%);
+      position: fixed; top:0; left:0; width:100%; height:100%;
+      background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.25) 50%);
       background-size: 100% 4px;
-      opacity: 0.025;
-      pointer-events: none;
-      z-index: 9999;
+      opacity: 0.025; pointer-events: none; z-index: 9999;
     }
-
-    /* Grain/Noise Overlay */
     .grain-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      position: fixed; top:0; left:0; width:100%; height:100%;
       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-      opacity: 0.04;
-      pointer-events: none;
-      z-index: 9998;
+      opacity: 0.04; pointer-events: none; z-index: 9998;
     }
 
-    /* Floating Capsule Navbar */
+    /* ─── NAVBAR ────────────────────────────────────────────── */
     .capsule-navbar {
-      background: rgba(14, 22, 18, 0.45);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      background: rgba(9, 14, 12, 0.6);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid rgba(255,255,255,0.06);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04);
     }
 
-    /* Custom premium scrollbar */
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
+    /* ─── SCROLLBAR ─────────────────────────────────────────── */
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-track { background:#090e0c; }
+    ::-webkit-scrollbar-thumb { background:#1c2420; border-radius:3px; }
+    ::-webkit-scrollbar-thumb:hover { background:#38B6FF; }
 
-    ::-webkit-scrollbar-track {
-      background: #090e0c;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: #1c2420;
-      border-radius: 4px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: #38B6FF;
-    }
-
-    /* Text Gradient */
+    /* ─── TEXT GRADIENTS ────────────────────────────────────── */
     .text-gradient-rock {
-      background: linear-gradient(135deg, #38B6FF 0%, #00FF88 50%, #A66E4E 100%);
+      background: linear-gradient(135deg,#38B6FF 0%,#00FF88 50%,#A66E4E 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .text-gradient-hero {
+      background: linear-gradient(135deg, #ffffff 0%, #a8f5d4 40%, #38B6FF 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
 
-    /* Dynamic fade-up page entrance */
+    /* ─── SCROLL-REVEAL SYSTEM ──────────────────────────────── */
+    /* Elements start hidden; GSAP will reveal them */
+    .reveal-up {
+      opacity: 0;
+      transform: translateY(36px) scale(0.97);
+      will-change: opacity, transform;
+    }
+    .reveal-up.is-visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      transition: opacity 0.85s cubic-bezier(0.22,1,0.36,1),
+                  transform 0.85s cubic-bezier(0.22,1,0.36,1);
+    }
+    .reveal-left {
+      opacity: 0;
+      transform: translateX(-40px) scale(0.97);
+      will-change: opacity, transform;
+    }
+    .reveal-left.is-visible {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      transition: opacity 0.85s cubic-bezier(0.22,1,0.36,1),
+                  transform 0.85s cubic-bezier(0.22,1,0.36,1);
+    }
+    .reveal-right {
+      opacity: 0;
+      transform: translateX(40px) scale(0.97);
+      will-change: opacity, transform;
+    }
+    .reveal-right.is-visible {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      transition: opacity 0.85s cubic-bezier(0.22,1,0.36,1),
+                  transform 0.85s cubic-bezier(0.22,1,0.36,1);
+    }
+
+    /* ─── CARD GLASS SYSTEM ─────────────────────────────────── */
+    .glass-card {
+      background: rgba(13, 22, 18, 0.7);
+      backdrop-filter: blur(12px) saturate(160%);
+      -webkit-backdrop-filter: blur(12px) saturate(160%);
+      border: 1px solid rgba(255,255,255,0.06);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .glass-card:hover {
+      border-color: rgba(0,255,136,0.2);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,255,136,0.08),
+                  inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .capability-card {
+      transition: transform 0.55s cubic-bezier(0.22,1,0.36,1),
+                  box-shadow 0.55s cubic-bezier(0.22,1,0.36,1),
+                  border-color 0.4s ease;
+      will-change: transform;
+    }
+    .capability-card:hover {
+      transform: translateY(-8px) scale(1.01);
+      box-shadow: 0 30px 70px rgba(0,0,0,0.5), 0 0 30px rgba(0,255,136,0.06);
+    }
+
+    /* ─── HERO BLOBS ────────────────────────────────────────── */
+    .hero-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      pointer-events: none;
+      will-change: transform;
+    }
+    @keyframes blobFloat1 {
+      0%,100% { transform: translate(0,0) scale(1); }
+      33%      { transform: translate(40px,-50px) scale(1.08); }
+      66%      { transform: translate(-30px,30px) scale(0.94); }
+    }
+    @keyframes blobFloat2 {
+      0%,100% { transform: translate(0,0) scale(1); }
+      33%      { transform: translate(-50px,30px) scale(1.05); }
+      66%      { transform: translate(35px,-40px) scale(0.96); }
+    }
+    @keyframes blobFloat3 {
+      0%,100% { transform: translate(0,0) scale(1); }
+      50%      { transform: translate(25px,45px) scale(1.1); }
+    }
+    .blob-1 { animation: blobFloat1 18s ease-in-out infinite; }
+    .blob-2 { animation: blobFloat2 22s ease-in-out infinite; }
+    .blob-3 { animation: blobFloat3 15s ease-in-out infinite; }
+
+     /* ─── STAT COUNTER ──────────────────────────────────────── */
+     .stat-num {
+       display: block;
+       font-variant-numeric: tabular-nums;
+       will-change: transform;
+     }
+
+    /* ─── METRIC CARD ───────────────────────────────────────── */
+    .metric-card {
+      background: rgba(13,22,18,0.6);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 24px;
+      padding: 40px 32px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.55s cubic-bezier(0.22,1,0.36,1),
+                  box-shadow 0.55s cubic-bezier(0.22,1,0.36,1);
+    }
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(0,255,136,0.03) 0%, transparent 60%);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+    .metric-card:hover::before { opacity: 1; }
+    .metric-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 40px rgba(0,255,136,0.04);
+    }
+
+    /* ─── SECTION LABEL ─────────────────────────────────────── */
+    .section-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: #00FF88;
+      opacity: 0.7;
+    }
+    .section-eyebrow::before {
+      content: '';
+      width: 24px;
+      height: 1px;
+      background: currentColor;
+    }
+
+    /* ─── HERO SCROLL HINT ──────────────────────────────────── */
+    @keyframes scrollPulse {
+      0%   { transform: translateY(0); opacity: 1; }
+      50%  { transform: translateY(8px); opacity: 0.4; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    .scroll-hint-dot { animation: scrollPulse 2s ease-in-out infinite; }
+
+    /* ─── TIMELINE ──────────────────────────────────────────── */
+    .timeline-card {
+      transition: transform 0.5s cubic-bezier(0.22,1,0.36,1),
+                  border-color 0.4s ease,
+                  box-shadow 0.4s ease;
+      will-change: transform;
+    }
+    .timeline-card:hover {
+      transform: translateY(-8px);
+      border-color: rgba(0,255,136,0.3);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,255,136,0.1);
+    }
+    .timeline-card:hover .step-title { color: #00FF88; }
+    .timeline-card:hover .step-icon  { transform: scale(1.12) rotate(8deg); }
+
+    /* ─── DIAMOND NODE ──────────────────────────────────────── */
+    @keyframes diamondPulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(0,255,136,0.5), 0 0 14px rgba(0,255,136,0.5); }
+      50%      { box-shadow: 0 0 0 8px rgba(0,255,136,0), 0 0 28px rgba(0,255,136,0.35); }
+    }
+    .diamond-pulse { animation: diamondPulse 2.8s ease-in-out infinite; }
+
+    /* ─── BUTTON MAGNETIC ───────────────────────────────────── */
+    .btn-primary {
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.4s cubic-bezier(0.22,1,0.36,1),
+                  box-shadow 0.4s ease;
+    }
+    .btn-primary::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .btn-primary:hover { transform: translateY(-2px) scale(1.03); }
+    .btn-primary:hover::after { opacity: 1; }
+    .btn-primary:active { transform: scale(0.98); }
+
+    /* ─── PAGE ENTRANCE ─────────────────────────────────────── */
     @keyframes fadeUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
+      from { opacity:0; transform:translateY(24px) scale(0.97); }
+      to   { opacity:1; transform:translateY(0) scale(1); }
+    }
+    .animate-fade-up { animation: fadeUp 0.75s cubic-bezier(0.22,1,0.36,1) forwards; }
 
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    /* ─── ORB DRIFT (section backgrounds) ──────────────────── */
+    @keyframes orbDrift {
+      0%,100% { transform:translate(0,0) scale(1); }
+      33%      { transform:translate(18px,-22px) scale(1.04); }
+      66%      { transform:translate(-12px,14px) scale(0.97); }
+    }
+    .orb-drift { animation: orbDrift 12s ease-in-out infinite; }
+
+    /* ─── SHIMMER LINE ──────────────────────────────────────── */
+    @keyframes shimmer {
+      0%   { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+    .shimmer-line {
+      background: linear-gradient(90deg,
+        transparent 0%, rgba(0,255,136,0.6) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: shimmer 3s ease-in-out infinite;
     }
 
-    .animate-fade-up {
-      animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    /* ─── DYNAMIC NAVBAR EXPANSION ──────────────────────────── */
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(24px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .animate-slide-in-right {
+      animation: slideInRight 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     }
   </style>
 </head>
@@ -161,12 +350,83 @@
 
   <!-- React Logic & Core SPA App Engine -->
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useCallback } = React;
     const {
       ResponsiveContainer, AreaChart, Area, BarChart, Bar,
       XAxis, YAxis, Tooltip, Legend, RadarChart, PolarGrid,
       PolarAngleAxis, PolarRadiusAxis, Radar, CartesianGrid
     } = Recharts;
+
+    // ── Scroll-Reveal Hook ────────────────────────────────────────────────
+    // Attaches IntersectionObserver to any container; child elements with
+    // class "reveal-up", "reveal-left", "reveal-right" get "is-visible"
+    // added with a staggered delay when they enter the viewport.
+    const useReveal = (containerRef, { threshold = 0.12, staggerMs = 80 } = {}) => {
+      useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const targets = container.querySelectorAll('.reveal-up, .reveal-left, .reveal-right');
+        if (!targets.length) return;
+
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            const el = entry.target;
+            const delay = parseFloat(el.dataset.revealDelay || 0);
+            setTimeout(() => {
+              el.classList.add('is-visible');
+            }, delay);
+            observer.unobserve(el);
+          });
+        }, { threshold });
+
+        targets.forEach((el, i) => {
+          if (!el.dataset.revealDelay) {
+            el.dataset.revealDelay = i * staggerMs;
+          }
+        });
+        targets.forEach(el => observer.observe(el));
+
+        return () => observer.disconnect();
+      }, []);
+    };
+
+    // ── Count-Up Hook ─────────────────────────────────────────────────────
+    // Animates a number from 0 → target with optional suffix, adds blur
+    // during motion. Triggers once when the element enters the viewport.
+    const useCountUp = (ref, target, { duration = 1800, suffix = '', decimals = 0 } = {}) => {
+      useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        let started = false;
+
+        const runCount = () => {
+          if (started) return;
+          started = true;
+          const start = performance.now();
+          const step = (now) => {
+            const progress = Math.min((now - start) / duration, 1);
+            // Use cubic-bezier(0.22,1,0.36,1) easing approximation
+            const ease = 1 - Math.pow(1 - progress, 4);
+            const value = ease * target;
+            el.textContent = (decimals > 0 ? value.toFixed(decimals) : Math.floor(value)) + suffix;
+            if (progress < 1) {
+              requestAnimationFrame(step);
+            } else {
+              el.textContent = (decimals > 0 ? target.toFixed(decimals) : target) + suffix;
+            }
+          };
+          requestAnimationFrame(step);
+        };
+
+        const observer = new IntersectionObserver(([entry]) => {
+          if (entry.isIntersecting) { runCount(); observer.disconnect(); }
+        }, { threshold: 0.5 });
+        observer.observe(el);
+        return () => observer.disconnect();
+      }, [target]);
+    };
 
     // Fixed color code mapping for 12 lithologies (organic tones)
     const FACIES_COLOR_MAP = {
@@ -210,6 +470,40 @@
       'Sandstone', 'Sandstone/Shale', 'Shale', 'Marl', 'Dolomite', 'Limestone',
       'Chalk', 'Halite', 'Anhydrite', 'Tuff', 'Coal', 'Basement'
     ];
+
+    // ── HeroStats — animated count-up metric strip ────────────────────────
+    const HeroStats = () => {
+      const accRef  = useRef(null);
+      const wellRef = useRef(null);
+      const msRef   = useRef(null);
+
+      useCountUp(accRef,  98.4, { suffix: '%', decimals: 1, duration: 2000 });
+      useCountUp(wellRef, 2400, { suffix: '+', decimals: 0, duration: 2200 });
+      useCountUp(msRef,   12,   { suffix: 'ms', decimals: 0, duration: 1600 });
+
+      return (
+        <div className="max-w-3xl mx-auto border-t border-white/8 pt-10 mt-4 opacity-0 animate-fade-up"
+          style={{ animationDelay: '750ms', animationFillMode: 'forwards' }}>
+          <div className="grid grid-cols-3 gap-0 text-center">
+            <div className="border-r border-white/8 px-6">
+              <span ref={accRef} className="stat-num font-heading font-black text-white"
+                style={{fontSize:'clamp(2rem,5vw,3.5rem)', letterSpacing:'-0.02em'}}>0%</span>
+              <span className="block font-mono text-[9px] text-white/30 tracking-[0.3em] uppercase mt-2">F1 Accuracy</span>
+            </div>
+            <div className="border-r border-white/8 px-6">
+              <span ref={wellRef} className="stat-num font-heading font-black text-white"
+                style={{fontSize:'clamp(2rem,5vw,3.5rem)', letterSpacing:'-0.02em'}}>0+</span>
+              <span className="block font-mono text-[9px] text-white/30 tracking-[0.3em] uppercase mt-2">Wells Processed</span>
+            </div>
+            <div className="px-6">
+              <span ref={msRef} className="stat-num font-heading font-black text-white"
+                style={{fontSize:'clamp(2rem,5vw,3.5rem)', letterSpacing:'-0.02em'}}>0ms</span>
+              <span className="block font-mono text-[9px] text-white/30 tracking-[0.3em] uppercase mt-2">Inference Latency</span>
+            </div>
+          </div>
+        </div>
+      );
+    };
 
     // Landing screen HLS stream video rendering
     const VideoStream = () => {
@@ -505,13 +799,22 @@
         if (elValDtc && wellLogs.DTC) elValDtc.textContent = wellLogs.DTC[idx] !== null && wellLogs.DTC[idx] !== undefined ? wellLogs.DTC[idx].toFixed(2) : 'N/A';
       };
 
-      // Draw individual curve traces
+      // Draw individual curve traces with high-performance decimation to prevent SVG rendering lag
       const getSVGPoints = (curveData, minVal, maxVal, width = 160, height = 480) => {
-        return curveData.map((val, idx) => {
+        if (!curveData || curveData.length === 0) return '';
+        const len = curveData.length;
+        const maxPoints = 1000;
+        const step = Math.max(1, Math.floor(len / maxPoints));
+        
+        const points = [];
+        for (let idx = 0; idx < len; idx += step) {
+          const val = curveData[idx];
+          if (val === null || val === undefined) continue;
           const x = ((val - minVal) / (maxVal - minVal)) * width;
-          const y = (idx / curveData.length) * height;
-          return `${x},${y}`;
-        }).join(' ');
+          const y = (idx / len) * height;
+          points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+        }
+        return points.join(' ');
       };
 
       return (
@@ -531,20 +834,27 @@
             <div className="col-span-2 flex flex-col items-center">
               <div className="text-[10px] font-mono text-accent-primary uppercase mb-2">Facies Column</div>
               <div className="w-16 h-[480px] relative rounded-lg border border-border-subtle overflow-hidden">
-                {wellLogs.predictions.map((p, idx) => {
-                  if (idx % 2 !== 0) return null; // Resample slightly for lighter DOM footprint
-                  return (
-                    <div
-                      key={idx}
-                      className="absolute left-0 w-full"
-                      style={{
-                        top: `${(idx / wellLogs.predictions.length) * 100}%`,
-                        height: `${(2 / wellLogs.predictions.length) * 100}%`,
-                        backgroundColor: FACIES_COLOR_MAP[p]
-                      }}
-                    ></div>
-                  );
-                })}
+                {(() => {
+                  const len = wellLogs.predictions.length;
+                  const maxDivs = 480;
+                  const step = Math.max(1, Math.floor(len / maxDivs));
+                  const divs = [];
+                  for (let i = 0; i < len; i += step) {
+                    const p = wellLogs.predictions[i];
+                    divs.push(
+                      <div
+                        key={i}
+                        className="absolute left-0 w-full"
+                        style={{
+                          top: `${(i / len) * 100}%`,
+                          height: `${(step / len) * 100}%`,
+                          backgroundColor: FACIES_COLOR_MAP[p]
+                        }}
+                      ></div>
+                    );
+                  }
+                  return divs;
+                })()}
                 {/* Horizontal pointer mapping location */}
                 <div
                   id="facies-pointer"
@@ -629,6 +939,158 @@
       );
     };
 
+    // ─── CAPABILITIES SECTION ───────────────────────────
+    const CapabilitiesSection = () => {
+      const capRef = useRef(null);
+      useReveal(capRef, { staggerMs: 90, threshold: 0.08 });
+      const features = [
+        { icon: 'fa-solid fa-code-compare',        color: '#00FF88', title: 'Multi-Model Comparison',       desc: 'Benchmarks KNN, Decision Tree, Random Forest, XGBoost, and LightGBM on identical data with full metric reporting.' },
+        { icon: 'fa-solid fa-wave-square',          color: '#38B6FF', title: 'Wavelet Feature Engineering',  desc: 'Ricker (Mexican Hat) CWT convolved across 7 logs at 32 scales — expanding the feature space from 12 to 19 dimensions.' },
+        { icon: 'fa-solid fa-chart-simple',         color: '#A66E4E', title: 'Three Evaluation Metrics',     desc: 'Jaccard accuracy, Hamming loss, and a geological Penalty Matrix that weights catastrophic misclassifications heavily.' },
+        { icon: 'fa-solid fa-brain',                color: '#00FF88', title: 'SHAP Explainability',          desc: 'GR, RHOB, and DTC contributions decomposed per prediction class via Shapley values for full model transparency.' },
+        { icon: 'fa-solid fa-layer-group',          color: '#38B6FF', title: '12 Lithofacies Classes',       desc: 'Sandstone, Shale, Limestone, Chalk, Halite, Dolomite, Coal, Anhydrite, Marl, Tuff, Basement classification.' },
+        { icon: 'fa-solid fa-bolt',                 color: '#A66E4E', title: 'Real-Time Ingestion',          desc: 'Upload any LAS well log file and receive per-depth lithofacies predictions at 12ms inference latency.' },
+      ];
+      return (
+        <section className="bg-void py-32 px-6 relative overflow-hidden">
+          <div className="absolute -left-64 top-10 w-[500px] h-[500px] bg-accent-secondary/4 rounded-full blur-[120px] orb-drift pointer-events-none"></div>
+          <div className="absolute -right-64 bottom-0 w-[450px] h-[450px] bg-accent-primary/4 rounded-full blur-[100px] orb-drift pointer-events-none" style={{animationDelay:'5s'}}></div>
+
+          <div ref={capRef} className="max-w-7xl mx-auto relative z-10">
+            {/* Header */}
+            <div className="text-center mb-24">
+              <div className="reveal-up mb-5"><span className="section-eyebrow mx-auto justify-center">Capabilities Matrix</span></div>
+              <div className="reveal-up mb-6">
+                <h2 className="font-heading font-black text-white leading-tight"
+                  style={{fontSize:'clamp(2.2rem,5vw,4.5rem)'}}>
+                  Engineered for{' '}
+                  <span className="bg-gradient-to-r from-accent-secondary via-accent-primary to-accent-secondary bg-clip-text text-transparent italic">
+                    Subsurface Precision
+                  </span>
+                </h2>
+              </div>
+              <div className="reveal-up">
+                <div className="w-16 h-px shimmer-line mx-auto"></div>
+              </div>
+            </div>
+
+            {/* Card grid — each card reveals independently */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {features.map((f, i) => (
+                <div key={i}
+                  className="reveal-up glass-card capability-card rounded-2xl p-8 group relative overflow-hidden flex flex-col min-h-[240px]"
+                  data-reveal-delay={i * 90}>
+                  {/* Corner glow */}
+                  <div className="absolute -right-12 -top-12 w-28 h-28 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+                    style={{background: `radial-gradient(circle, ${f.color}22 0%, transparent 70%)`}}></div>
+                  {/* Icon */}
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base mb-6 border transition-all duration-500 group-hover:scale-110 group-hover:rotate-6"
+                    style={{background:`${f.color}11`, borderColor:`${f.color}33`, color:f.color}}>
+                    <i className={f.icon}></i>
+                  </div>
+                  <h3 className="font-heading font-black text-lg text-white mb-3 transition-colors duration-300"
+                    onMouseEnter={e => e.target.style.color=f.color}
+                    onMouseLeave={e => e.target.style.color='white'}>
+                    {f.title}
+                  </h3>
+                  <p className="font-sans text-[13px] text-white/40 leading-relaxed flex-grow">{f.desc}</p>
+                  {/* Bottom accent line */}
+                  <div className="mt-6 h-px w-0 group-hover:w-full transition-all duration-700"
+                    style={{background:`linear-gradient(to right, ${f.color}88, transparent)`}}></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    };
+
+    // ─── METHODOLOGY SECTION ────────────────────────────
+    const MethodologySection = () => {
+      const tlRef = useRef(null);
+      useReveal(tlRef, { staggerMs: 0, threshold: 0.06 });
+      const steps = [
+        { num:'01', icon:'fa-solid fa-file-import',        color:'#00FF88', title:'Data Ingestion',              tag:'INGEST',   desc:'Raw LAS well log files parsed and validated. Twelve petrophysical curves selected — GR, RHOB, NPHI, DTC, RMED, RDEP, RSHA, CALI, PEF, SP, BS, DEPTH_MD — prioritising minimal missing values across the Norway FORCE 2020 dataset.' },
+        { num:'02', icon:'fa-solid fa-sliders',             color:'#38B6FF', title:'Preprocessing & Scaling',    tag:'CLEAN',    desc:'Per-well median imputation fills small gaps without cross-well leakage. An 80/20 well-based train–test split isolates unseen wells entirely. StandardScaler is applied selectively for distance-sensitive models such as KNN.' },
+        { num:'03', icon:'fa-solid fa-wave-square',         color:'#A66E4E', title:'Continuous Wavelet Transform',tag:'FEATURES', desc:'Ricker (Mexican Hat) CWT is convolved across 7 key logs at 32 scales. Mean absolute wavelet coefficients per log expand the feature space from 12 to 19 dimensions, capturing cycle-thickness and frequency transitions invisible to raw log values.' },
+        { num:'04', icon:'fa-solid fa-brain',               color:'#00FF88', title:'Model Training & Tuning',    tag:'TRAIN',    desc:'Five classifiers benchmarked: KNN, Decision Tree, Random Forest (200 estimators), XGBoost (526 estimators), LightGBM (216 estimators). Hyperparameters tuned via stratified cross-validation on the training wells only.' },
+        { num:'05', icon:'fa-solid fa-square-poll-vertical',color:'#38B6FF', title:'Geological Evaluation',      tag:'SCORE',    desc:'Performance reported on three metrics: Jaccard accuracy, Hamming loss, and a domain-specific Penalty Matrix that weights geologically catastrophic misclassifications more heavily. Random Forest leads: 0.948 accuracy, −0.1289 penalty.' },
+        { num:'06', icon:'fa-solid fa-wand-magic-sparkles', color:'#A66E4E', title:'SHAP Explainability',        tag:'EXPLAIN',  desc:'Shapley values decompose every prediction into per-feature contributions. GR dominates shallow siliciclastic classes; RHOB + NPHI are decisive for Coal; resistivity logs (RMED, RDEP) and DTC separate carbonate lithofacies.' },
+      ];
+      return (
+        <section className="bg-surface py-32 px-6 border-y border-white/5 relative overflow-hidden">
+          <div className="absolute left-0 top-1/4 w-[500px] h-[500px] bg-accent-secondary/4 rounded-full blur-[140px] pointer-events-none orb-drift"></div>
+          <div className="absolute right-0 bottom-1/4 w-[400px] h-[400px] bg-accent-primary/4 rounded-full blur-[120px] pointer-events-none orb-drift" style={{animationDelay:'4s'}}></div>
+
+          <div ref={tlRef} className="max-w-6xl mx-auto relative z-10">
+            {/* Header */}
+            <div className="text-center mb-28">
+              <div className="reveal-up mb-5"><span className="section-eyebrow mx-auto justify-center">Methodology Pipeline</span></div>
+              <div className="reveal-up mb-5">
+                <h2 className="font-heading font-black text-white leading-tight"
+                  style={{fontSize:'clamp(2.2rem,5vw,4.5rem)'}}>
+                  The Analytical{' '}
+                  <span className="bg-gradient-to-r from-accent-secondary via-accent-primary to-accent-secondary bg-clip-text text-transparent">Workflow</span>
+                </h2>
+              </div>
+              <div className="reveal-up mb-8">
+                <p className="font-sans text-white/40 text-base max-w-xl mx-auto leading-relaxed">
+                  Six precision-engineered stages from raw well logs to interpretable geoscience intelligence.
+                </p>
+              </div>
+              <div className="reveal-up"><div className="w-20 h-px shimmer-line mx-auto"></div></div>
+            </div>
+
+            {/* Timeline */}
+            <div className="relative w-full">
+              <div className="hidden lg:block absolute left-1/2 -translate-x-1/2 top-4 bottom-4 w-px bg-gradient-to-b from-accent-secondary/20 via-accent-secondary/60 to-accent-primary/20"></div>
+              <div className="lg:hidden absolute left-6 md:left-8 top-4 bottom-4 w-px bg-gradient-to-b from-accent-secondary/20 via-accent-secondary/60 to-accent-primary/20"></div>
+
+              {steps.map((step, idx) => {
+                const isLeft = idx % 2 === 0;
+                return (
+                  <div key={idx} className="relative flex flex-col pl-14 md:pl-20 lg:pl-0 lg:grid lg:grid-cols-9 lg:items-center mb-20 last:mb-0 w-full">
+                    {/* Diamond node — reveals upward */}
+                    <div className="reveal-up absolute left-6 md:left-8 top-8 -translate-x-1/2 z-20 lg:static lg:col-span-1 lg:col-start-5 lg:flex lg:justify-center lg:items-center lg:translate-x-0"
+                      data-reveal-delay={idx * 120}>
+                      <div className="relative flex items-center justify-center">
+                        <div className="absolute w-10 h-10 rounded-full border border-dashed opacity-25 animate-spin"
+                          style={{borderColor:step.color, animationDuration:'12s', animationDelay:`${idx*0.4}s`}}></div>
+                        <div className="w-6 h-6 rotate-45 border-2 flex items-center justify-center transition-all duration-500 hover:scale-125 hover:rotate-[135deg] cursor-pointer diamond-pulse"
+                          style={{borderColor:step.color, background:'#090e0c', boxShadow:`0 0 12px ${step.color}80`}}>
+                          <div className="w-1.5 h-1.5 rounded-sm" style={{background:step.color}}></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card — alternating left/right reveal */}
+                    <div className={`w-full lg:col-span-4 lg:row-start-1 ${isLeft ? 'lg:col-start-1 lg:justify-self-end lg:pr-10' : 'lg:col-start-6 lg:justify-self-start lg:pl-10'}`}>
+                      <div className={`${isLeft ? 'reveal-left' : 'reveal-right'} timeline-card relative overflow-hidden group w-full max-w-md bg-[#0d1612]/95 border border-white/6 rounded-2xl p-7 cursor-default`}
+                        data-reveal-delay={idx * 120 + 60}>
+                        <span className="big-step-num absolute right-6 top-4 font-mono font-black text-7xl opacity-5 group-hover:opacity-20 scale-100 group-hover:scale-105 transition-all duration-700 pointer-events-none select-none"
+                          style={{color:step.color}}>{step.num}</span>
+                        <div className="flex items-center mb-4">
+                          <span className="font-mono text-[9px] px-2.5 py-0.5 rounded-full border"
+                            style={{color:step.color, borderColor:step.color+'44', background:step.color+'11'}}>{step.tag}</span>
+                        </div>
+                        <div className="step-icon w-10 h-10 rounded-xl flex items-center justify-center text-base mb-4 border transition-all duration-400"
+                          style={{background:step.color+'11', borderColor:step.color+'33', color:step.color}}>
+                          <i className={step.icon}></i>
+                        </div>
+                        <h4 className="step-title font-heading font-extrabold text-xl text-white mb-3 transition-colors duration-300">{step.title}</h4>
+                        <p className="font-sans text-[13px] text-white/45 leading-relaxed">{step.desc}</p>
+                        <div className="mt-5 h-px w-full" style={{backgroundImage:`linear-gradient(to right, transparent, ${step.color}55, transparent)`}}></div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      );
+    };
+
     // Global App Component
     // Global App Component
     function App() {
@@ -657,6 +1119,7 @@
       const [uploadError, setUploadError] = useState(null);
       const [analysisLoading, setAnalysisLoading] = useState(false);
       const [loadingStep, setLoadingStep] = useState(0);
+      const [isHeroCtaScrolledOut, setIsHeroCtaScrolledOut] = useState(false);
 
       // Backend status and metadata caches
       const [backendStatus, setBackendStatus] = useState(null);
@@ -670,23 +1133,60 @@
 
       // File upload hidden inputs refs
       const fileInputRef = useRef(null);
+      const heroCtaRef = useRef(null);
 
-      // Save state variables to localStorage when they change
+      // Save state variables to localStorage when they change and reset scroll position to top
       useEffect(() => {
         localStorage.setItem('lithofacies_route', currentRoute);
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }, [currentRoute]);
+
+      // Intersection Observer to toggle header CTA when Hero Start Analysis CTA goes off-screen
+      useEffect(() => {
+        if (currentRoute !== 'landing') {
+          setIsHeroCtaScrolledOut(false);
+          return;
+        }
+
+        let observer;
+        const initObserver = () => {
+          if (!heroCtaRef.current) {
+            requestAnimationFrame(initObserver);
+            return;
+          }
+
+          observer = new IntersectionObserver(([entry]) => {
+            setIsHeroCtaScrolledOut(!entry.isIntersecting);
+          }, {
+            root: null,
+            threshold: 0
+          });
+
+          observer.observe(heroCtaRef.current);
+        };
+
+        initObserver();
+
+        return () => {
+          if (observer) {
+            observer.disconnect();
+          }
+        };
       }, [currentRoute]);
 
       useEffect(() => {
         localStorage.setItem('lithofacies_tab', activeTab);
+        window.scrollTo({ top: 0, behavior: 'instant' });
       }, [activeTab]);
 
       useEffect(() => {
         localStorage.setItem('lithofacies_well', selectedWell);
       }, [selectedWell]);
 
-      useEffect(() => {
-        localStorage.setItem('lithofacies_dataset', selectedDatasetName);
-      }, [selectedDatasetName]);
+      const handleLogoClick = () => {
+        setCurrentRoute('landing');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
 
       // Fetch backend metadata and available wells list on mount
       useEffect(() => {
@@ -934,7 +1434,6 @@
           setSelectedWell('WELL_CUSTOM');
           setUploadedFile(file);
           setUploadError(null);
-          executePipeline(file);
         }
       };
 
@@ -952,10 +1451,10 @@
         });
       }, []);
 
-      // Auto re-run prediction if selectedModel, selectedFeatureSet, or selectedWell changes during results view
+      // Auto re-run prediction silently in background if selectedModel, selectedFeatureSet, or selectedWell changes during results view
       useEffect(() => {
         if (currentRoute === 'results' && !isInitializing) {
-          executePipeline();
+          executePipeline(uploadedFile, true);
         }
       }, [selectedModel, selectedFeatureSet, selectedWell, currentRoute, isInitializing]);
 
@@ -1030,7 +1529,7 @@
               <div className="capsule-navbar w-full max-w-7xl flex items-center justify-between rounded-full px-4 py-3 sm:px-8 sm:py-4 border border-white/5 bg-surface/30 backdrop-blur-md">
                 <div
                   className="hidden md:flex items-center gap-2 cursor-pointer group"
-                  onClick={() => setCurrentRoute('landing')}
+                  onClick={handleLogoClick}
                 >
                   <span className="text-xl text-accent-secondary group-hover:rotate-90 transition-all duration-500">◈</span>
                   <span className="font-heading font-extrabold tracking-wider text-lg text-white">LITHOFACIES ML</span>
@@ -1080,22 +1579,45 @@
                   </span>
                   <button
                     onClick={() => setCurrentRoute('upload')}
-                    className="bg-accent-primary hover:bg-accent-primary/80 transition-colors text-void font-bold px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-full font-heading uppercase tracking-wider text-[9px] sm:text-xs"
+                    className="bg-[#A7F9CC] text-void hover:bg-[#A7F9CC]/90 transition-all duration-300 font-bold px-3.5 py-3.5 sm:px-6 sm:py-3 rounded-full font-heading uppercase tracking-widest text-[9px] sm:text-xs shadow-[0_0_20px_rgba(167,249,204,0.15)] hover:shadow-[0_0_30px_rgba(167,249,204,0.3)] hover:scale-[1.03] flex items-center justify-center gap-1.5"
+                    title="Re-upload Dataset"
                   >
-                    Re-upload
+                    <span className="hidden sm:inline">Re-upload</span>
+                    <span className="sm:hidden">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                      </svg>
+                    </span>
                   </button>
                 </div>
               </div>
             ) : (
               // Landing & Upload Compact Centered Logo Capsule Layout - text a bit bigger
-              <div className="capsule-navbar w-fit inline-flex items-center justify-center rounded-full px-5 py-3 sm:px-10 sm:py-4 border border-white/10 bg-surface/40 backdrop-blur-md shadow-[0_4px_30px_rgba(0,0,0,0.4)] transition-all duration-300 hover:border-white/20">
+              <div 
+                className={`capsule-navbar inline-flex items-center justify-between rounded-full border border-white/10 bg-surface/40 backdrop-blur-md shadow-[0_4px_30px_rgba(0,0,0,0.4)] transition-all duration-500 hover:border-white/20 ${
+                  currentRoute === 'landing' && isHeroCtaScrolledOut
+                    ? 'w-full max-w-xl px-6 py-2.5 sm:px-8 sm:py-3.5 gap-6 sm:gap-12'
+                    : 'w-fit px-5 py-3 sm:px-10 sm:py-4 gap-0'
+                }`}
+              >
                 <div
-                  className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group"
-                  onClick={() => setCurrentRoute('landing')}
+                  className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group transition-all duration-300"
+                  onClick={handleLogoClick}
                 >
                   <span className="text-xl sm:text-2xl text-accent-secondary group-hover:rotate-90 transition-all duration-500">◈</span>
                   <span className="font-heading font-black tracking-widest text-sm sm:text-lg md:text-xl text-white group-hover:text-accent-secondary transition-colors">LITHOFACIES ML</span>
                 </div>
+
+                <button
+                  onClick={() => setCurrentRoute('upload')}
+                  className={`btn-primary bg-[#A7F9CC] text-void font-heading font-bold text-[10px] sm:text-xs tracking-wider rounded-full shadow-[0_0_20px_rgba(167,249,204,0.15)] flex items-center gap-1.5 shrink-0 transition-all duration-500 ${
+                    currentRoute === 'landing' && isHeroCtaScrolledOut
+                      ? 'max-w-[200px] px-5 py-2 sm:px-6 sm:py-2.5 opacity-100 translate-x-0 scale-100 ml-4'
+                      : 'max-w-0 p-0 opacity-0 translate-x-12 scale-90 overflow-hidden pointer-events-none border-0 ml-0'
+                  }`}
+                >
+                  Start Analysis <span className="text-xs font-black">→</span>
+                </button>
               </div>
             )}
           </header>
@@ -1104,158 +1626,87 @@
               PAGE 1 — DYNAMIC CINEMATIC HERO 
               ========================================== */}
           {currentRoute === 'landing' && (
-            <main className="flex-1 flex flex-col animate-fade-up">
+            <main key="landing" className="flex-1 flex flex-col animate-fade-up" id="landing-main">
 
-              {/* Full Screen Immersive geological Backdrop video section */}
+              {/* ── HERO ─────────────────────────────────────────────────── */}
               <section className="relative w-full h-screen flex flex-col justify-center items-center overflow-hidden">
                 <VideoStream />
 
-                {/* Visual Depth Stack Overlays */}
-                <div className="absolute inset-0 bg-gradient-to-b from-void/50 via-void/70 to-void z-1"></div>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#090e0c_85%)] z-2"></div>
+                {/* Visual overlays */}
+                <div className="absolute inset-0 bg-gradient-to-b from-void/40 via-void/65 to-void z-[1]"></div>
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,#090e0c_80%)] z-[2]"></div>
 
-                {/* Subsurface Pill HUD center contents */}
-                <div className="z-10 text-center px-6 max-w-4xl">
-                  <h1 className="font-heading font-bold text-white text-4xl md:text-6xl tracking-tight max-w-5xl mx-auto mb-6 leading-tight">
-                    Unveiling the <span className="italic text-accent-secondary">Earth's Subsurface</span> <br />
-                    with Machine Learning
-                  </h1>
+                {/* Floating gradient blobs — each animates independently */}
+                <div className="hero-blob blob-1 w-[560px] h-[560px] top-[-80px] left-[-120px] z-[1]"
+                  style={{background:'radial-gradient(circle, rgba(0,255,136,0.07) 0%, transparent 70%)'}}></div>
+                <div className="hero-blob blob-2 w-[480px] h-[480px] bottom-[-60px] right-[-100px] z-[1]"
+                  style={{background:'radial-gradient(circle, rgba(56,182,255,0.07) 0%, transparent 70%)'}}></div>
+                <div className="hero-blob blob-3 w-[320px] h-[320px] top-[30%] right-[15%] z-[1]"
+                  style={{background:'radial-gradient(circle, rgba(166,110,78,0.05) 0%, transparent 70%)'}}></div>
 
-                  <p className="font-sans text-text-secondary text-sm md:text-base max-w-2xl mx-auto mb-10 leading-relaxed opacity-90">
-                    Predict lithofacies with precision using automated well log analysis and wavelet-transformed features. Leverage our proprietary neural network architecture to decode complex seismic signatures.
-                  </p>
+                {/* Hero content */}
+                <div className="relative z-10 text-center px-6 max-w-5xl w-full">
 
-                  {/* Operational buttons section */}
-                  <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-14">
+                  {/* Eyebrow — first to reveal */}
+                  <div className="mb-6 opacity-0 animate-fade-up" style={{ animationDelay: '150ms', animationFillMode: 'forwards' }}>
+                    <span className="section-eyebrow mx-auto justify-center">Subsurface Intelligence Platform</span>
+                  </div>
+
+                  {/* Main headline */}
+                  <div className="mb-6 opacity-0 animate-fade-up" style={{ animationDelay: '300ms', animationFillMode: 'forwards' }}>
+                    <h1 className="font-heading font-black text-white leading-[1.05] tracking-tight"
+                      style={{fontSize:'clamp(2.6rem, 6vw, 5.5rem)'}}>
+                      Unveiling the{' '}
+                      <span className="text-gradient-hero italic">Earth's Subsurface</span>
+                      <br />with Machine Learning
+                    </h1>
+                  </div>
+
+                  {/* Subtitle */}
+                  <div className="mb-10 opacity-0 animate-fade-up" style={{ animationDelay: '450ms', animationFillMode: 'forwards' }}>
+                    <p className="font-sans text-white/50 text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
+                      Predict lithofacies with precision using wavelet-transformed well logs.
+                      Decode complex seismic signatures at 12ms inference speed.
+                    </p>
+                  </div>
+
+                  {/* CTA Buttons */}
+                  <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-16 opacity-0 animate-fade-up"
+                    style={{ animationDelay: '600ms', animationFillMode: 'forwards' }}>
                     <button
+                      ref={heroCtaRef}
                       onClick={() => setCurrentRoute('upload')}
-                      className="bg-[#A7F9CC] text-void hover:bg-[#8be4b0] font-sans font-bold text-sm tracking-wide px-8 py-3.5 rounded-full shadow-[0_0_24px_rgba(167,249,204,0.15)] transition-all duration-300 hover:scale-105 flex items-center gap-2"
+                      className="btn-primary bg-[#A7F9CC] text-void font-heading font-bold text-sm tracking-wide px-9 py-4 rounded-full shadow-[0_0_40px_rgba(167,249,204,0.2)] flex items-center gap-2.5"
                     >
-                      Start Analysis <span className="text-base">→</span>
+                      Start Analysis <span className="text-base font-black">→</span>
                     </button>
                     <a
                       href="https://www.kaggle.com/datasets/faresazzam/well-logs-dataset-for-machine-learning"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="bg-white/5 border border-white/10 hover:bg-white/10 text-white font-sans font-bold text-sm tracking-wide px-8 py-3.5 rounded-full transition-all duration-300 hover:scale-105 flex items-center gap-2"
+                      target="_blank" rel="noopener noreferrer"
+                      className="btn-primary bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] text-white font-heading font-bold text-sm tracking-wide px-9 py-4 rounded-full flex items-center gap-2.5"
                     >
-                      Explore Dataset <i className="fa-solid fa-database text-xs opacity-70"></i>
+                      Explore Dataset <i className="fa-solid fa-database text-xs opacity-60"></i>
                     </a>
                   </div>
 
-                  {/* Active wells readout segment */}
-                  <div className="max-w-4xl mx-auto border-t border-white/5 pt-8 mt-6">
-                    <div className="grid grid-cols-3 gap-4 text-center">
-                      <div className="border-r border-white/10 pr-4">
-                        <span className="block text-3xl md:text-4xl font-heading font-extrabold text-white">98.4%</span>
-                        <span className="block text-[10px] font-mono text-text-muted tracking-[0.25em] uppercase mt-1">F1 Accuracy Score</span>
-                      </div>
-                      <div className="border-r border-white/10 px-4">
-                        <span className="block text-3xl md:text-4xl font-heading font-extrabold text-white">2.4k+</span>
-                        <span className="block text-[10px] font-mono text-text-muted tracking-[0.25em] uppercase mt-1">Wells Processed</span>
-                      </div>
-                      <div className="pl-4">
-                        <span className="block text-3xl md:text-4xl font-heading font-extrabold text-white">12ms</span>
-                        <span className="block text-[10px] font-mono text-text-muted tracking-[0.25em] uppercase mt-1">Inference Latency</span>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Animated stat strip */}
+                  <HeroStats />
                 </div>
 
-                {/* Bottom pulsing navigation hint */}
-                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10 cursor-pointer opacity-70 hover:opacity-100 transition-opacity">
-                  <span className="text-[10px] font-mono text-text-muted tracking-widest uppercase">Explore Capabilities</span>
-                  <div className="w-[1px] h-8 bg-border-subtle relative overflow-hidden rounded">
-                    <div className="absolute top-0 left-0 w-full h-1/2 bg-accent-secondary animate-bounce"></div>
+                {/* Scroll hint */}
+                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-10 opacity-50 hover:opacity-80 transition-opacity duration-500 cursor-pointer">
+                  <span className="text-[9px] font-mono text-white/60 tracking-[0.35em] uppercase">Explore</span>
+                  <div className="w-px h-10 bg-gradient-to-b from-white/30 to-transparent relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1/2 bg-accent-secondary scroll-hint-dot"></div>
                   </div>
                 </div>
               </section>
 
-              {/* ==========================================
-                  SECTION 2 — CAPABILITIES MATRIX GRID (PREMIUM REVAMP)
-                  ========================================== */}
-              <section className="bg-void py-24 px-6 relative overflow-hidden">
-                <div className="absolute -left-40 top-0 w-96 h-96 bg-accent-secondary/5 rounded-full blur-3xl"></div>
-                <div className="absolute -right-40 bottom-0 w-96 h-96 bg-accent-primary/5 rounded-full blur-3xl"></div>
+              {/* ── CAPABILITIES ─────────────────────────────────────── */}
+              <CapabilitiesSection />
 
-                <div className="max-w-7xl mx-auto relative z-10">
-                  <div className="text-center mb-20">
-                    <span className="font-mono text-accent-secondary text-xs uppercase tracking-[0.3em] block mb-3">CAPABILITIES MATRIX</span>
-                    <h2 className="font-heading font-black text-4xl md:text-6xl text-white leading-tight">
-                      Engineered for <span className="bg-gradient-to-r from-accent-secondary via-accent-primary to-accent-secondary bg-clip-text text-transparent italic">Subsurface Precision</span>
-                    </h2>
-                    <div className="w-16 h-[2px] bg-accent-secondary mx-auto mt-6 shadow-[0_0_8px_#00FF88]"></div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {[
-                      { icon: '🔬', title: 'Multi-Model Comparison', desc: 'Benchmarks KNN, Decision Tree, Random Forest, XGBoost, and LightGBM against each other on the same dataset.' },
-                      { icon: '🌊', title: 'Wavelet Feature Engineering', desc: 'Applies Ricker (Mexican hat) continuous wavelet transform to well logs, generating 7 additional frequency-domain features.' },
-                      { icon: '📊', title: 'Three Evaluation Metrics', desc: 'Scores every model on Jaccard accuracy, Hamming loss, and a geological Penalty Matrix — not just raw accuracy.' },
-                      { icon: '🧠', title: 'SHAP Explainability', desc: 'Reveals which well logs (GR, RHOB, DTC) drove each lithofacies prediction using Shapley values.' },
-                      { icon: '🗂️', title: '12 Lithofacies Classes', desc: 'Classifies into Sandstone, Shale, Limestone, Chalk, Halite, Dolomite, Coal, Anhydrite, Marl, Tuff, Basement, and more.' },
-                      { icon: '⚡', title: 'Real-Time Ingestion', desc: 'Upload any LAS format well log file and receive instant predictions with per-depth classification.' }
-                    ].map((f, i) => (
-                      <div
-                        key={i}
-                        className="bg-[#0e1713]/80 border border-white/5 hover:border-accent-secondary/50 rounded-2xl p-8 transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_15px_40px_rgba(0,255,136,0.08)] group relative overflow-hidden flex flex-col justify-between min-h-[240px]"
-                      >
-                        <div className="absolute -right-16 -top-16 w-32 h-32 bg-accent-secondary/5 rounded-full blur-2xl group-hover:bg-accent-secondary/15 transition-all duration-500"></div>
-                        <div>
-                          <div className="w-14 h-14 rounded-2xl bg-accent-secondary/10 text-accent-secondary border border-accent-secondary/20 flex items-center justify-center text-3xl mb-6 group-hover:scale-110 group-hover:bg-accent-secondary group-hover:text-void group-hover:rotate-6 transition-all duration-500">
-                            {f.icon}
-                          </div>
-                          <h3 className="font-heading font-black text-xl text-white mb-3 group-hover:text-accent-secondary transition-colors">{f.title}</h3>
-                          <p className="font-sans text-sm text-text-secondary leading-relaxed opacity-90">{f.desc}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              {/* ==========================================
-                  SECTION 3 — GEOLOGICAL WORKFLOW PIPELINE (PREMIUM REVAMP)
-                  ========================================== */}
-              <section className="bg-surface py-24 px-6 border-y border-white/5 relative overflow-hidden">
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-accent-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
-
-                <div className="max-w-7xl mx-auto relative z-10">
-                  <div className="text-center mb-20">
-                    <span className="font-mono text-accent-primary text-xs uppercase tracking-[0.3em] block mb-3">METHODOLOGY PIPELINE</span>
-                    <h2 className="font-heading font-black text-4xl md:text-6xl text-white leading-tight">
-                      The Analytical <span className="bg-gradient-to-r from-accent-primary via-accent-secondary to-accent-primary bg-clip-text text-transparent italic">Workflow System</span>
-                    </h2>
-                    <div className="w-16 h-[2px] bg-accent-primary mx-auto mt-6 shadow-[0_0_8px_#38B6FF]"></div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 relative">
-                    {[
-                      { num: '01', title: 'Data Ingestion', desc: 'Load LAS well log files. Select 12 logs with minimal missing data: GR, RHOB, NPHI, DTC, RMED, RDEP, RSHA, CALI, PEF, SP, BS, DEPTH_MD.' },
-                      { num: '02', title: 'Preprocessing', desc: 'Median imputation per-well for small gaps. Well-based train/test split (80/20) to prevent data leakage. StandardScaler applied for distance-based models.' },
-                      { num: '03', title: 'Wavelet Transform', desc: 'Ricker wavelet CWT applied to 7 key logs, extracting mean absolute coefficients to produce 7 new features (total: 19 features).' },
-                      { num: '04', title: 'Model Training', desc: 'Five algorithms trained: KNN, Decision Tree, Random Forest (200 trees), XGBoost (526 estimators), LightGBM (216 estimators). Hyperparameters tuned via cross-validation.' },
-                      { num: '05', title: 'Evaluation', desc: 'Scored on Jaccard accuracy, Hamming loss, and Penalty Matrix. Best: Random Forest at 0.948 accuracy, −0.1289 penalty, 0.0473 Hamming.' },
-                      { num: '06', title: 'SHAP Analysis', desc: 'Feature importance computed per lithofacies class. GR dominates most classes; RHOB + NPHI key for Coal; RHOB + DTC + RMED for Dolomite/Limestone.' }
-                    ].map((step, idx) => (
-                      <div
-                        key={idx}
-                        className="bg-card border border-white/10 hover:border-accent-primary/60 p-8 rounded-2xl transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_15px_40px_rgba(56,182,255,0.08)] group relative overflow-hidden flex flex-col justify-between min-h-[260px]"
-                      >
-                        <span className="absolute right-6 top-4 font-mono font-black text-6xl text-white/5 group-hover:text-accent-primary/20 transition-all duration-500">{step.num}</span>
-                        <div>
-                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-primary/10 border border-accent-primary/20 text-accent-primary font-mono text-xs uppercase mb-6">
-                            <span className="w-1.5 h-1.5 rounded-full bg-accent-primary animate-ping"></span>
-                            Step {step.num}
-                          </div>
-                          <h4 className="font-heading font-bold text-lg text-white mb-3 group-hover:text-accent-primary transition-colors">{step.title}</h4>
-                          <p className="font-sans text-sm text-text-secondary leading-relaxed opacity-95">{step.desc}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
+              {/* ── METHODOLOGY TIMELINE ─────────────────────────────── */}
+              <MethodologySection />
 
             </main>
           )}
@@ -1264,7 +1715,7 @@
               PAGE 2 — DATA INGESTION UPLOADER
               ========================================== */}
           {currentRoute === 'upload' && (
-            <main className="flex-1 flex flex-col justify-center items-center py-12 px-6 max-w-7xl mx-auto w-full animate-fade-up">
+            <main key="upload" className="flex-1 flex flex-col justify-center items-center py-12 px-6 max-w-7xl mx-auto w-full animate-fade-up">
 
               {/* Back navigation button */}
               <button
@@ -1305,7 +1756,7 @@
 
                 {/* Left zone: Dash dropzone uploader */}
                 <div
-                  onClick={triggerFileSelect}
+                  onClick={uploadedFile ? undefined : triggerFileSelect}
                   onDragOver={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1313,16 +1764,20 @@
                   onDrop={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    if (uploadedFile) return;
                     const file = e.dataTransfer.files[0];
                     if (file) {
                       setSelectedDatasetName(file.name);
                       setSelectedWell('WELL_CUSTOM');
                       setUploadedFile(file);
                       setUploadError(null);
-                      executePipeline(file);
                     }
                   }}
-                  className="bg-card border-2 border-dashed border-border-accent/40 rounded-2xl p-8 flex flex-col justify-center items-center text-center cursor-pointer hover:border-accent-primary hover:shadow-[0_0_40px_rgba(56,182,255,0.06)] transition-all duration-300 relative group overflow-hidden"
+                  className={`bg-card border-2 rounded-2xl p-8 flex flex-col justify-center items-center text-center transition-all duration-300 relative group overflow-hidden ${
+                    uploadedFile
+                      ? 'border-accent-secondary/60 bg-[#0d1612]/80 shadow-[0_0_40px_rgba(0,255,136,0.1)]'
+                      : 'border-dashed border-border-accent/40 cursor-pointer hover:border-accent-primary hover:shadow-[0_0_40px_rgba(56,182,255,0.06)]'
+                  }`}
                 >
                   <input
                     type="file"
@@ -1331,57 +1786,110 @@
                     className="hidden"
                     accept=".las"
                   />
-                  <div className="w-16 h-16 rounded-full bg-accent-glow flex items-center justify-center text-3xl text-accent-primary mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
-                    <i className="fa-solid fa-cloud-arrow-up"></i>
-                  </div>
-                  <h3 className="font-heading font-extrabold text-xl text-white mb-2 group-hover:text-accent-primary transition-colors">Drop your .LAS file here</h3>
-                  <p className="font-sans text-xs text-text-muted mb-6">Supports standard LAS 2.0 petrophysical logs</p>
+                  {uploadedFile ? (
+                    // Staged file layout view
+                    <div className="flex flex-col items-center w-full animate-fade-up">
+                      <div className="w-16 h-16 rounded-full bg-accent-secondary/10 border border-accent-secondary/30 flex items-center justify-center text-3xl text-accent-secondary mb-6 pulse-green">
+                        <i className="fa-solid fa-file-lines"></i>
+                      </div>
+                      <span className="font-mono text-[10px] text-accent-secondary uppercase tracking-[0.2em] mb-1">STAGED FOR ANALYSIS</span>
+                      <h3 className="font-heading font-black text-xl text-white mb-2 max-w-xs truncate" title={uploadedFile.name}>
+                        {uploadedFile.name}
+                      </h3>
+                      <p className="font-mono text-[10px] text-text-muted mb-6">
+                        {(uploadedFile.size / 1024).toFixed(1)} KB • Ready to ingest
+                      </p>
 
-                  <button className="border border-accent-primary/60 hover:bg-accent-primary hover:text-void transition-colors text-accent-primary font-heading font-bold text-xs uppercase px-6 py-2.5 rounded-lg">
-                    Browse Files
-                  </button>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerFileSelect();
+                          }}
+                          className="px-5 py-2.5 bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] hover:border-white/20 text-white font-heading font-bold text-[10px] uppercase rounded-full transition-all"
+                        >
+                          Change File
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUploadedFile(null);
+                            setSelectedWell('WELL_FORCE_2020_01');
+                            setSelectedDatasetName('Norway — FORCE 2020 Full');
+                          }}
+                          className="px-5 py-2.5 bg-accent-danger/10 border border-accent-danger/20 hover:bg-accent-danger/20 text-accent-danger font-heading font-bold text-[10px] uppercase rounded-full transition-all"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    // Default dropzone layout view
+                    <>
+                      <div className="w-16 h-16 rounded-full bg-accent-glow flex items-center justify-center text-3xl text-accent-primary mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
+                        <i className="fa-solid fa-cloud-arrow-up"></i>
+                      </div>
+                      <h3 className="font-heading font-extrabold text-xl text-white mb-2 group-hover:text-accent-primary transition-colors">Drop your .LAS file here</h3>
+                      <p className="font-sans text-xs text-text-muted mb-6">Supports standard LAS 2.0 petrophysical logs</p>
+
+                      <button className="btn-primary bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] text-white font-heading font-bold text-xs uppercase px-6 py-3 rounded-full transition-all">
+                        Browse Files
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 {/* Right zone: Replicated field selection datasets list */}
                 <div className="flex flex-col gap-4">
                   <span className="font-mono text-text-muted text-[10px] tracking-[0.2em] uppercase text-left">OR CHOOSE A PRELOADED DATASET</span>
 
-                  {PRELOADED_DATASETS.map((d) => (
-                    <div
-                      key={d.id}
-                      onClick={() => {
-                        setSelectedWell(d.wellCode);
-                        setSelectedDatasetName(d.name);
-                        setUploadedFile(null);
-                        setUploadError(null);
-                      }}
-                      className={`flex justify-between items-center p-5 rounded-xl cursor-pointer border transition-all duration-300 ${normalizeDatasetName(selectedDatasetName) === normalizeDatasetName(d.name) ? 'bg-elevated border-accent-secondary shadow-[0_0_20px_rgba(0,255,136,0.08)]' : 'bg-card border-border-subtle hover:border-text-muted'}`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <span className="font-display font-extrabold text-3xl text-accent-secondary leading-none">{d.id}</span>
-                        <div className="text-left">
-                          <h4 className="font-heading font-bold text-sm text-white">{d.name}</h4>
-                          <p className="font-sans text-[11px] text-text-muted mt-1">{d.details}</p>
+                  {PRELOADED_DATASETS.map((d) => {
+                    const isSelected = normalizeDatasetName(selectedDatasetName) === normalizeDatasetName(d.name);
+                    return (
+                      <div
+                        key={d.id}
+                        onClick={() => {
+                          setSelectedWell(d.wellCode);
+                          setSelectedDatasetName(d.name);
+                          setUploadedFile(null);
+                          setUploadError(null);
+                        }}
+                        className={`flex justify-between items-center p-5 rounded-2xl cursor-pointer border transition-all duration-300 ${
+                          isSelected
+                            ? 'bg-[#0d1612]/90 border-accent-secondary shadow-[0_0_30px_rgba(0,255,136,0.12)] scale-[1.01]'
+                            : 'glass-card border-white/6 hover:border-accent-secondary/30 bg-[#0d1612]/40 hover:scale-[1.005]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <span className="font-display font-extrabold text-3xl text-accent-secondary leading-none">{d.id}</span>
+                          <div className="text-left">
+                            <h4 className="font-heading font-bold text-sm text-white">{d.name}</h4>
+                            <p className="font-sans text-[11px] text-text-muted mt-1 leading-relaxed">{d.details}</p>
+                          </div>
                         </div>
-                      </div>
 
-                      {normalizeDatasetName(selectedDatasetName) === normalizeDatasetName(d.name) ? (
-                        <span className="text-accent-secondary text-sm"><i className="fa-solid fa-circle-check"></i></span>
-                      ) : (
-                        <span className="text-text-muted text-[10px] font-mono tracking-wider">SELECT</span>
-                      )}
-                    </div>
-                  ))}
+                        {isSelected ? (
+                          <span className="text-accent-secondary text-sm"><i className="fa-solid fa-circle-check animate-pulse"></i></span>
+                        ) : (
+                          <span className="text-text-muted text-[10px] font-mono tracking-widest opacity-60 hover:opacity-100 transition-opacity">SELECT</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
               </div>
 
               {/* Ingestion run pipeline triggers */}
-              <div className="w-full flex flex-col items-center">
+              <div className="w-full flex flex-col items-center mt-8">
                 <button
-                  onClick={() => executePipeline()}
+                  onClick={() => executePipeline(uploadedFile)}
                   disabled={!selectedDatasetName || analysisLoading}
-                  className={`w-full max-w-md font-heading font-extrabold tracking-wider text-base uppercase py-5 rounded-xl shadow-lg transition-transform hover:scale-[1.02] ${analysisLoading ? 'bg-elevated text-text-muted border border-border-subtle' : 'bg-accent-secondary text-void hover:bg-accent-secondary/80'}`}
+                  className={`btn-primary font-heading font-bold text-sm tracking-wide px-9 py-4 rounded-full w-full max-w-md flex items-center justify-center gap-2.5 transition-all duration-300 ${
+                    analysisLoading
+                      ? 'bg-white/[0.04] border border-white/10 text-white/30 cursor-not-allowed shadow-none'
+                      : 'bg-[#A7F9CC] text-void shadow-[0_0_40px_rgba(167,249,204,0.2)]'
+                  }`}
                 >
                   {analysisLoading ? 'ANALYZING SUBSURFACE...' : 'RUN PIPELINE ANALYSIS →'}
                 </button>
@@ -1416,13 +1924,13 @@
               PAGE 3 — SCIENTIFIC RESULTS DASHBOARD
               ========================================== */}
           {currentRoute === 'results' && (
-            <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8 animate-fade-up">
+            <main key="results" className="flex-1 max-w-7xl mx-auto w-full px-6 py-8 animate-fade-up">
 
               {/* ------------------------------------------
                   TAB 1: LITHOLOGY PREDICTIONS TRACK
                   ------------------------------------------ */}
               {activeTab === 'prediction' && (
-                <div className="grid grid-cols-12 gap-8">
+                <div key="prediction" className="grid grid-cols-12 gap-8 animate-fade-up">
 
                   {/* Dominant Rock Class Jumbotron Summary Banner */}
                   <div className="col-span-12 bg-card border border-border-subtle rounded-3xl p-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8 xl:gap-12 w-full">
@@ -1544,22 +2052,14 @@
                   TAB 2: DATA ANALYSIS DIAGNOSTICS
                   ------------------------------------------ */}
               {activeTab === 'analysis' && (
-                <div className="grid grid-cols-12 gap-8">
+                <div key="analysis" className="grid grid-cols-12 gap-8 animate-fade-up">
 
                   {/* Left Column: Log scale distribution bar chart */}
                   <div className="col-span-12 lg:col-span-6 bg-card border border-border-subtle p-6 rounded-3xl transition-all duration-300 hover:border-accent-secondary/30">
                     <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase">CLASS DISTRIBUTION</span>
                     <h3 className="font-heading font-bold text-xl text-white mb-6">Lithofacies Frequency Class Support</h3>
 
-                    <div
-                      className="w-full h-80 relative"
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const x = e.clientX - rect.left;
-                        const y = e.clientY - rect.top;
-                        setClassSupportCoords({ x, y });
-                      }}
-                    >
+                    <div className="w-full h-80 relative">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                           data={getClassDistributionData()}
@@ -1579,45 +2079,9 @@
                             dataKey="count"
                             fill="url(#barGradient)"
                             radius={[6, 6, 0, 0]}
-                            className="cursor-pointer"
-                            onClick={(data, index, event) => {
-                              if (clickedClassSupport && clickedClassSupport.name === data.name) {
-                                setClickedClassSupport(null);
-                              } else {
-                                setClickedClassSupport(data);
-                              }
-                            }}
                           />
                         </BarChart>
                       </ResponsiveContainer>
-
-                      {clickedClassSupport && (
-                        <div
-                          className="absolute bg-[#141a17]/95 border border-accent-secondary p-3 rounded-xl shadow-[0_4px_20px_rgba(0,255,136,0.3)] z-30 pointer-events-auto text-left min-w-[140px] animate-fade-in"
-                          style={{
-                            left: `${classSupportCoords.x}px`,
-                            top: `${classSupportCoords.y - 65}px`,
-                            transform: 'translateX(-50%)'
-                          }}
-                        >
-                          <div className="flex justify-between items-center mb-1.5 gap-2">
-                            <span className="font-heading font-black text-xs text-white">{clickedClassSupport.name}</span>
-                            <button
-                              className="text-text-muted hover:text-accent-secondary text-[10px] font-bold"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setClickedClassSupport(null);
-                              }}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          <div className="font-mono text-[10px] text-text-secondary">
-                            <span>Count: </span>
-                            <strong className="text-accent-primary">{clickedClassSupport.count.toLocaleString()}</strong>
-                          </div>
-                        </div>
-                      )}
                     </div>
 
                     <div className="border-l-4 border-accent-secondary bg-surface/50 p-5 rounded-r-xl mt-4 text-xs font-mono text-text-secondary leading-relaxed">
@@ -1677,7 +2141,7 @@
                   TAB 3: MODEL PERFORMANCE & SHAP HUB
                   ------------------------------------------ */}
               {activeTab === 'comparison' && (
-                <div className="grid grid-cols-12 gap-8">
+                <div key="comparison" className="grid grid-cols-12 gap-8 animate-fade-up">
 
                   {/* Left Performance Leaderboard & SHAP segment */}
                   <div className="col-span-12 lg:col-span-8 flex flex-col gap-8">
@@ -1724,15 +2188,7 @@
                       <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase">EXPLAINABILITY</span>
                       <h3 className="font-heading font-bold text-xl text-white mb-6">Mean |SHAP| Mineral Log Influence segments</h3>
 
-                      <div
-                        className="w-full h-80 relative"
-                        onClick={(e) => {
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const x = e.clientX - rect.left;
-                          const y = e.clientY - rect.top;
-                          setShapCoords({ x, y });
-                        }}
-                      >
+                      <div className="w-full h-80 relative">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
                             layout="vertical"
@@ -1756,14 +2212,6 @@
                               fill="#FF6B00"
                               name="Shale Contribution"
                               radius={[4, 0, 0, 4]}
-                              className="cursor-pointer"
-                              onClick={(data, index, event) => {
-                                if (clickedSHAP && clickedSHAP.name === data.name) {
-                                  setClickedSHAP(null);
-                                } else {
-                                  setClickedSHAP(data);
-                                }
-                              }}
                             />
                             <Bar
                               dataKey="coal"
@@ -1771,14 +2219,6 @@
                               fill="#E5A93B"
                               name="Coal Contribution"
                               radius={0}
-                              className="cursor-pointer"
-                              onClick={(data, index, event) => {
-                                if (clickedSHAP && clickedSHAP.name === data.name) {
-                                  setClickedSHAP(null);
-                                } else {
-                                  setClickedSHAP(data);
-                                }
-                              }}
                             />
                             <Bar
                               dataKey="dolomite"
@@ -1786,55 +2226,9 @@
                               fill="#F5F5DC"
                               name="Dolomite Contribution"
                               radius={[0, 4, 4, 0]}
-                              className="cursor-pointer"
-                              onClick={(data, index, event) => {
-                                if (clickedSHAP && clickedSHAP.name === data.name) {
-                                  setClickedSHAP(null);
-                                } else {
-                                  setClickedSHAP(data);
-                                }
-                              }}
                             />
                           </BarChart>
                         </ResponsiveContainer>
-
-                        {clickedSHAP && (
-                          <div
-                            className="absolute bg-[#141a17]/95 border border-accent-primary p-4 rounded-xl shadow-[0_4px_20px_rgba(56,182,255,0.3)] z-30 pointer-events-auto text-left min-w-[180px] animate-fade-in"
-                            style={{
-                              left: `${shapCoords.x}px`,
-                              top: `${shapCoords.y - 110}px`,
-                              transform: 'translateX(-50%)'
-                            }}
-                          >
-                            <div className="flex justify-between items-center mb-2 pb-1 border-b border-white/10 gap-2">
-                              <span className="font-heading font-black text-xs text-white">{clickedSHAP.name}</span>
-                              <button
-                                className="text-text-muted hover:text-accent-primary text-[10px] font-bold"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setClickedSHAP(null);
-                                }}
-                              >
-                                ✕
-                              </button>
-                            </div>
-                            <div className="space-y-1.5 font-mono text-[10px]">
-                              <div className="flex justify-between">
-                                <span className="text-[#FF6B00]">Shale:</span>
-                                <strong className="text-white">{clickedSHAP.shale}%</strong>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-[#E5A93B]">Coal:</span>
-                                <strong className="text-white">{clickedSHAP.coal}%</strong>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-[#F5F5DC]">Dolomite:</span>
-                                <strong className="text-white">{clickedSHAP.dolomite}%</strong>
-                              </div>
-                            </div>
-                          </div>
-                        )}
                       </div>
 
                       <div className="bg-void/50 border border-border-subtle p-4 rounded-xl mt-4 text-xs text-text-secondary leading-relaxed font-mono">
@@ -1925,6 +2319,9 @@
                   </span>
                   <p className="font-sans max-w-sm leading-relaxed mb-4 text-[13px] text-text-muted">
                     Subsurface intelligence, surface clarity. High-performance machine learning diagnostics for modern petrophysics.
+                  </p>
+                  <p className="font-sans max-w-sm leading-relaxed mb-4 text-[12px] text-text-muted/65 mt-3">
+                    Leveraging advanced continuous wavelet transforms and deep ensemble classifiers to deliver production-grade lithology predictions. Calibrated on thousands of shelf wells across the North Sea to automate stratigraphy workflows with unmatched physical consistency.
                   </p>
                 </div>
                 <div>
