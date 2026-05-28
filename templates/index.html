@@ -940,17 +940,127 @@
     };
 
     // ─── CAPABILITIES SECTION ───────────────────────────
+    const CwtMockVisualizer = () => {
+      return (
+        <div className="w-full bg-void/60 border border-white/5 rounded-2xl p-4 overflow-hidden mt-6 relative h-48 select-none">
+          <div className="absolute inset-0 grid grid-cols-6 gap-2 opacity-[0.02] pointer-events-none">
+            <div className="border-r border-white"></div>
+            <div className="border-r border-white"></div>
+            <div className="border-r border-white"></div>
+            <div className="border-r border-white"></div>
+            <div className="border-r border-white"></div>
+            <div className="border-r border-white"></div>
+          </div>
+          <div className="flex flex-col h-full justify-between relative z-10">
+            <div className="flex justify-between items-center text-[9px] font-mono text-white/30 border-b border-white/5 pb-1.5">
+              <span>WAVELET TRANSFORM</span>
+              <span className="text-accent-secondary animate-pulse flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-secondary"></span>SAMPLING ACTIVE
+              </span>
+            </div>
+            <div className="flex-1 relative flex items-center justify-center">
+              <svg className="w-full h-full opacity-80" viewBox="0 0 300 80">
+                <path
+                  d="M 0 40 Q 30 20 60 50 T 120 30 T 180 60 T 240 25 T 300 40"
+                  fill="none"
+                  stroke="#38B6FF"
+                  strokeWidth="1.5"
+                  strokeDasharray="4 3"
+                  className="opacity-30"
+                />
+                <path
+                  d="M 0 40 C 45 10, 45 70, 90 40 C 135 10, 135 70, 180 40 C 225 10, 225 70, 270 40 L 300 40"
+                  fill="none"
+                  stroke="#00FF88"
+                  strokeWidth="2"
+                  className="drop-shadow-[0_0_8px_#00FF88]"
+                />
+                <line x1="135" y1="5" x2="135" y2="75" stroke="#A7F9CC" strokeWidth="1" strokeDasharray="2 2" />
+                <circle cx="135" cy="40" r="4" fill="#A7F9CC" className="animate-ping" />
+                <circle cx="135" cy="40" r="3" fill="#00FF88" />
+              </svg>
+            </div>
+            <div className="flex justify-between text-[8px] font-mono text-white/20 border-t border-white/5 pt-1.5">
+              <span>SCALE: 1 - 32</span>
+              <span>COEFFICIENTS: MAX</span>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const ShapMockVisualizer = () => {
+      return (
+        <div className="w-full bg-void/60 border border-white/5 rounded-2xl p-4 overflow-hidden mt-6 relative h-48 select-none flex flex-col justify-between">
+          <div className="flex justify-between items-center">
+            <div className="flex flex-col">
+              <span className="text-[8px] font-mono text-white/30 uppercase">FEATURE ATTRIBUTION</span>
+              <span className="text-white font-bold text-xs font-sans">Gamma Ray Influence</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-white text-sm font-heading font-black">88.42%</span>
+              <span className="bg-accent-secondary/15 text-accent-secondary text-[8px] font-mono px-1.5 py-0.5 rounded-full">+12.4%</span>
+            </div>
+          </div>
+          <div className="flex-1 relative mt-2">
+            <svg className="w-full h-full animate-pulse" viewBox="0 0 400 80" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="shapGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#38B6FF" stopOpacity={0.2} />
+                  <stop offset="100%" stopColor="#38B6FF" stopOpacity={0.0} />
+                </linearGradient>
+              </defs>
+              <line x1="0" y1="20" x2="400" y2="20" stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
+              <line x1="0" y1="50" x2="400" y2="50" stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
+              <path
+                d="M 0 65 Q 40 50 80 58 T 160 48 T 240 28 T 320 62 T 400 35 L 400 80 L 0 80 Z"
+                fill="url(#shapGradient)"
+              />
+              <path
+                d="M 0 65 Q 40 50 80 58 T 160 48 T 240 28 T 320 62 T 400 35"
+                fill="none"
+                stroke="#38B6FF"
+                strokeWidth="2"
+                className="drop-shadow-[0_0_6px_#38B6FF]"
+              />
+              <line x1="240" y1="5" x2="240" y2="75" stroke="rgba(255,255,255,0.1)" strokeWidth="1" strokeDasharray="3 3" />
+              <circle cx="240" cy="28" r="4.5" fill="#38B6FF" />
+              <circle cx="240" cy="28" r="2" fill="#141a17" />
+            </svg>
+            <div
+              className="absolute bg-void/90 border border-accent-primary/20 rounded-xl px-2.5 py-1.5 text-left shadow-lg pointer-events-none select-none backdrop-blur-md"
+              style={{
+                left: '252px',
+                top: '5px',
+                transform: 'translateX(0%)'
+              }}
+            >
+              <div className="text-[7px] font-mono text-white/30 uppercase leading-none">Depth Point</div>
+              <div className="font-heading font-black text-[9px] text-white mt-0.5">1,065.2m</div>
+              <div className="text-[8px] font-mono text-accent-secondary mt-0.5 font-bold">Shale: +88%</div>
+            </div>
+          </div>
+          <div className="flex justify-between items-center text-[7px] font-mono text-white/20 pt-1.5 border-t border-white/5">
+            <span>0m</span>
+            <span>250m</span>
+            <span>500m</span>
+            <span>750m</span>
+            <span>1,000m</span>
+            <span>1,250m</span>
+          </div>
+        </div>
+      );
+    };
+
     const CapabilitiesSection = () => {
       const capRef = useRef(null);
       useReveal(capRef, { staggerMs: 90, threshold: 0.08 });
-      const features = [
-        { icon: 'fa-solid fa-code-compare',        color: '#00FF88', title: 'Multi-Model Comparison',       desc: 'Benchmarks KNN, Decision Tree, Random Forest, XGBoost, and LightGBM on identical data with full metric reporting.' },
-        { icon: 'fa-solid fa-wave-square',          color: '#38B6FF', title: 'Wavelet Feature Engineering',  desc: 'Ricker (Mexican Hat) CWT convolved across 7 logs at 32 scales — expanding the feature space from 12 to 19 dimensions.' },
-        { icon: 'fa-solid fa-chart-simple',         color: '#A66E4E', title: 'Three Evaluation Metrics',     desc: 'Jaccard accuracy, Hamming loss, and a geological Penalty Matrix that weights catastrophic misclassifications heavily.' },
-        { icon: 'fa-solid fa-brain',                color: '#00FF88', title: 'SHAP Explainability',          desc: 'GR, RHOB, and DTC contributions decomposed per prediction class via Shapley values for full model transparency.' },
-        { icon: 'fa-solid fa-layer-group',          color: '#38B6FF', title: '12 Lithofacies Classes',       desc: 'Sandstone, Shale, Limestone, Chalk, Halite, Dolomite, Coal, Anhydrite, Marl, Tuff, Basement classification.' },
-        { icon: 'fa-solid fa-bolt',                 color: '#A66E4E', title: 'Real-Time Ingestion',          desc: 'Upload any LAS well log file and receive per-depth lithofacies predictions at 12ms inference latency.' },
+      const topFeatures = [
+        { icon: 'fa-solid fa-layer-group',          color: '#00FF88', title: '12 Lithofacies Classes',       desc: 'Sandstone, Shale, Limestone, Chalk, Halite, Dolomite, Coal, Marl, Tuff, Basement prediction.' },
+        { icon: 'fa-solid fa-bolt',                 color: '#FF6B00', title: 'Real-Time Ingestion',          desc: 'Upload raw LAS well logs and receive complete lithofacies classifications at 12ms inference.' },
+        { icon: 'fa-solid fa-chart-simple',         color: '#38B6FF', title: 'Three Evaluation Metrics',     desc: 'Benchmarked via Jaccard index, Hamming loss, and a geological Penalty Matrix for domain fidelity.' }
       ];
+
       return (
         <section className="bg-void py-32 px-6 relative overflow-hidden">
           <div className="absolute -left-64 top-10 w-[500px] h-[500px] bg-accent-secondary/4 rounded-full blur-[120px] orb-drift pointer-events-none"></div>
@@ -974,32 +1084,67 @@
               </div>
             </div>
 
-            {/* Card grid — each card reveals independently */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {features.map((f, i) => (
+            {/* Layout Row 1: 3-column equal-width cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              {topFeatures.map((f, i) => (
                 <div key={i}
-                  className="reveal-up glass-card capability-card rounded-2xl p-8 group relative overflow-hidden flex flex-col min-h-[240px]"
+                  className="reveal-up glass-card capability-card rounded-[2rem] p-8 group relative overflow-hidden flex flex-col min-h-[220px]"
                   data-reveal-delay={i * 90}>
-                  {/* Corner glow */}
                   <div className="absolute -right-12 -top-12 w-28 h-28 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"
-                    style={{background: `radial-gradient(circle, ${f.color}22 0%, transparent 70%)`}}></div>
-                  {/* Icon */}
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base mb-6 border transition-all duration-500 group-hover:scale-110 group-hover:rotate-6"
-                    style={{background:`${f.color}11`, borderColor:`${f.color}33`, color:f.color}}>
-                    <i className={f.icon}></i>
+                    style={{background: `radial-gradient(circle, ${f.color}15 0%, transparent 70%)`}}></div>
+                  
+                  {/* Premium Badge Container */}
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center mb-6 border transition-transform duration-500 group-hover:scale-110"
+                    style={{background:`${f.color}08`, borderColor:`${f.color}20`}}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center"
+                      style={{background:`${f.color}15`}}>
+                      <i className={`${f.icon} text-sm`} style={{color:f.color}}></i>
+                    </div>
                   </div>
-                  <h3 className="font-heading font-black text-lg text-white mb-3 transition-colors duration-300"
-                    onMouseEnter={e => e.target.style.color=f.color}
-                    onMouseLeave={e => e.target.style.color='white'}>
+                  
+                  <h3 className="font-heading font-black text-lg text-white mb-3 transition-colors duration-300">
                     {f.title}
                   </h3>
                   <p className="font-sans text-[13px] text-white/40 leading-relaxed flex-grow">{f.desc}</p>
-                  {/* Bottom accent line */}
-                  <div className="mt-6 h-px w-0 group-hover:w-full transition-all duration-700"
-                    style={{background:`linear-gradient(to right, ${f.color}88, transparent)`}}></div>
                 </div>
               ))}
             </div>
+
+            {/* Layout Row 2: 2 asymmetric cards (40% / 60%) */}
+            <div className="grid grid-cols-12 gap-6">
+              {/* Left Asymmetric Card (40% width) - CWT */}
+              <div className="reveal-up glass-card capability-card rounded-[2rem] p-8 group relative overflow-hidden col-span-12 lg:col-span-5 flex flex-col justify-between min-h-[360px]"
+                data-reveal-delay={270}>
+                <div className="absolute -right-12 -top-12 w-28 h-28 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+                  style={{background: `radial-gradient(circle, #00FF8815 0%, transparent 70%)`}}></div>
+                <div>
+                  <h3 className="font-heading font-black text-xl text-white mb-3">
+                    Wavelet Feature Expansion
+                  </h3>
+                  <p className="font-sans text-[13px] text-white/40 leading-relaxed max-w-sm">
+                    Capture subtle geological cycles by convolving raw petrophysical inputs across 32 scales using Continuous Wavelet Transforms.
+                  </p>
+                </div>
+                <CwtMockVisualizer />
+              </div>
+
+              {/* Right Asymmetric Card (60% width) - SHAP */}
+              <div className="reveal-up glass-card capability-card rounded-[2rem] p-8 group relative overflow-hidden col-span-12 lg:col-span-7 flex flex-col justify-between min-h-[360px]"
+                data-reveal-delay={360}>
+                <div className="absolute -right-12 -top-12 w-28 h-28 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+                  style={{background: `radial-gradient(circle, #38B6FF15 0%, transparent 70%)`}}></div>
+                <div>
+                  <h3 className="font-heading font-black text-xl text-white mb-3">
+                    Shapley Attribution Segments
+                  </h3>
+                  <p className="font-sans text-[13px] text-white/40 leading-relaxed max-w-lg">
+                    Trace direct raw-log contributions to final lithofacies boundary decisions at any target depth coordinate with full explainability tracking.
+                  </p>
+                </div>
+                <ShapMockVisualizer />
+              </div>
+            </div>
+
           </div>
         </section>
       );
