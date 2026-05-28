@@ -1753,16 +1753,24 @@
                   <span className="font-heading font-black tracking-widest text-sm sm:text-lg md:text-xl text-white group-hover:text-accent-secondary transition-colors">LITHOFACIES ML</span>
                 </div>
 
-                <button
-                  onClick={() => setCurrentRoute('upload')}
-                  className={`btn-primary bg-[#A7F9CC] text-void font-heading font-bold text-[10px] sm:text-xs tracking-wider rounded-full shadow-[0_0_20px_rgba(167,249,204,0.15)] flex items-center gap-1.5 shrink-0 transition-all duration-500 ${
+                <div
+                  className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] flex items-center shrink-0 ${
                     currentRoute === 'landing' && isHeroCtaScrolledOut
-                      ? 'max-w-[200px] px-5 py-2 sm:px-6 sm:py-2.5 opacity-100 translate-x-0 scale-100 ml-4'
-                      : 'max-w-0 p-0 opacity-0 translate-x-12 scale-90 overflow-hidden pointer-events-none border-0 ml-0'
+                      ? 'max-w-[180px] opacity-100 ml-4'
+                      : 'max-w-0 opacity-0 ml-0 pointer-events-none'
                   }`}
                 >
-                  Start Analysis <span className="text-xs font-black">→</span>
-                </button>
+                  <button
+                    onClick={() => setCurrentRoute('upload')}
+                    className={`btn-primary bg-[#A7F9CC] text-void font-heading font-bold text-[10px] sm:text-xs tracking-wider rounded-full shadow-[0_0_20px_rgba(167,249,204,0.15)] flex items-center justify-center gap-1.5 whitespace-nowrap px-5 py-2 sm:px-6 sm:py-2.5 transition-all duration-500 ${
+                      currentRoute === 'landing' && isHeroCtaScrolledOut
+                        ? 'translate-x-0 scale-100 opacity-100'
+                        : 'translate-x-12 scale-90 opacity-0'
+                    }`}
+                  >
+                    Start Analysis <span className="text-xs font-black">→</span>
+                  </button>
+                </div>
               </div>
             )}
           </header>
@@ -1799,10 +1807,11 @@
 
                   {/* Main headline */}
                   <div className="mb-6 opacity-0 animate-fade-up" style={{ animationDelay: '300ms', animationFillMode: 'forwards' }}>
-                    <h1 className="font-heading font-black text-white leading-[1.05] tracking-tight"
+                    <h1 className="font-heading font-black text-white leading-[1.05] tracking-tight pb-2"
                       style={{fontSize:'clamp(2.6rem, 6vw, 5.5rem)'}}>
                       Unveiling the{' '}
-                      <span className="text-gradient-hero italic">Earth's Subsurface</span>
+                      <span className="text-gradient-hero italic pr-4 inline-block">Earth's</span>{' '}
+                      <span className="text-gradient-hero italic pr-4 inline-block">Subsurface</span>
                       <br />with Machine Learning
                     </h1>
                   </div>
