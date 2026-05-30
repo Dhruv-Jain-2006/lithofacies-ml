@@ -2,6 +2,8 @@
 
 This repository implements a robust machine learning workflow to predict rock types (lithofacies) from well log sensor data, replicating the methodology of **Merembayev et al. (2021)**: *A Comparison of Machine Learning Algorithms in Predicting Lithofacies: Case Studies from Norway and Kazakhstan*, Energies, 14, 1896.
 
+It features an advanced geological training pipeline coupled with a premium, real-time **Interactive Flask Web Dashboard** featuring live sandbox classifications, Viterbi stratigraphic sequence decoding, and SHAP explainability.
+
 ---
 
 ## 1. Project Goal
@@ -36,8 +38,13 @@ lithofacies-ml/
 │   ├── models.py       # GroupKFold hyperparameters and model wrappers
 │   ├── metrics.py      # Standard and Geological Penalty Matrix calculations
 │   ├── explain.py      # Multi-class SHAP TreeExplainer & beeswarm plotters
+│   ├── sequence.py     # Viterbi global path sequence probability decoders
+│   ├── augmentation.py # Minority class geological oversampling strategies
 │   └── generate_notebooks.py # Programmatic notebook builder
-├── plots/              # Saved figures (confusion matrix, SHAPbeeswarms, etc.)
+├── templates/          # React/Tailwind frontend premium dashboard templates
+│   └── index.html      # High-fidelity dashboard view and geological sandbox
+├── plots/              # Saved figures (confusion matrix, SHAP beeswarms, etc.)
+├── app.py              # Interactive Flask Web Dashboard Server
 ├── requirements.txt    # Python library dependencies
 ├── verify_pipeline.py  # Fully automated verification runner
 └── README.md           # Documentation
@@ -50,8 +57,10 @@ lithofacies-ml/
 - **`data_loader.py`:** Standardizes LAS loading via the `lasio` library. If raw data is absent, it automatically triggers a **Geologically Coherent Synthetic well log generator** that simulates organic sedimentary logs matching real petrophysical correlations (e.g. Coal having anomalously low density and high neutron porosity).
 - **`features.py`:** Handles missing gaps (fills short gaps < 5 samples with a well's log median, and drops larger blocks or missing logs), fits/applies standard scaling, and extracts continuous wavelet transform coefficients per well using PyWavelets.
 - **`models.py`:** Configures and fits the five classifiers using GroupKFold well-based cross-validation to search hyperparameter spaces, implementing the exact model settings described in the literature.
-- **`metrics.py`:** Includes Jaccard accuracy, Hamming loss, and the domain-specific Geological Penalty Score. Downloads the official FORCE 2020 penalty matrix from GitHub or falls back to a geological fallback matrix.
+- **`metrics.py`:** Includes Jaccard accuracy, Hamming loss, and the domain-specific Geological Penalty Score. Downloads the FORCE 2020 penalty matrix or falls back to a geological penalty fallback matrix.
 - **`explain.py`:** Standardizes SHAP multi-class computations and exports feature contribution beeswarm charts for all 12 classes.
+- **`sequence.py`:** Implements a dynamic programming **Viterbi sequence decoder**. Calculates transition probabilities from FORCE 2020 training sequence beds to resolve boundary noise and smooth high-frequency ML depth-wise classifications into contiguous stratigraphic layers.
+- **`augmentation.py`:** Standardizes a geologically-coherent class oversampling framework to resolve severe dataset imbalances (skewed ratios of sandstone/shale vs. rare coal/anhydrite beds) without producing out-of-bounds petrophysical features.
 
 ---
 
@@ -74,12 +83,22 @@ Ensure you have Python 3.8+ installed, then run:
 pip install -r requirements.txt
 ```
 
-### Run the End-to-End Pipeline
+### Run the End-to-End Pipeline (CLI)
 To generate simulated wells, compile all notebooks, preprocess data, train all 10 models, compute scores, and save all final SHAP and evaluation figures automatically, run:
 ```bash
 python verify_pipeline.py
 ```
 This script acts as the master execution orchestrator, verifying that the entire stack runs flawlessly, and saves all outputs inside `data/` and `plots/` directories.
+
+### Run the Interactive Web Dashboard (GUI)
+To launch the real-time geological classifier sandbox and interactive log viewer, run:
+```bash
+python app.py
+```
+Open `http://localhost:5000` in your web browser to access:
+- **5-Track Interactive Log Viewer:** Real-time log scrolling, visual active depth cursor tracking, model confidence badges, and prediction tracks.
+- **Sandbox Parameter Space:** Live toggle between different machine learning models, active feature spaces (12 original vs 19 wavelet), and Viterbi sequence smoothing boundaries.
+- **Live Attributions & Accordance:** Visual SHAP beeswarms for geological classes and model leaderboard statistics updating on the fly.
 
 ---
 
@@ -87,6 +106,7 @@ This script acts as the master execution orchestrator, verifying that the entire
 
 - **No Data Leakage:** The train-test split is grouped by well ID, ensuring that depth points from the same well do not cross the validation barrier.
 - **Replicated Scores:** Random Forest and tree-boosting models achieve superior Jaccard accuracies (>= 0.94 on synthetic sets), matching the trends identified in the Norway studies.
+- **Stratigraphic Coherence:** Incorporating the Viterbi path dynamic programming decoder eliminates depth-wise predictions jitter, creating structurally sound, contiguous stratigraphic log intervals.
 - **Geological Coherence:** Classifications match geological constraints; SHAP analyses confirm that Gamma Ray (`GR`) dominates clay-rich zones (shales), while Density (`RHOB`) and Neutron Porosity (`NPHI`) are highly responsive to coal formations.
 
 ---
