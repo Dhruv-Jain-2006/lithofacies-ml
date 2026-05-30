@@ -100,9 +100,15 @@ models_dict = {}
 scalers_dict = {}
 features_dict = {}
 
-# Backward compatible globally referenced models & scalers
-models_orig = {}
-models_wav = {}
+# Backward compatible globally referenced models & scalers (pre-populated with static keys to prevent startup model loads)
+models_orig = {
+    'KNN': None, 'Random Forest': None, 'Decision Tree': None,
+    'XGBoost': None, 'LightGBM': None, 'Ensemble': None
+}
+models_wav = {
+    'KNN': None, 'Random Forest': None, 'Decision Tree': None,
+    'XGBoost': None, 'LightGBM': None, 'Ensemble': None
+}
 scaler_orig = None
 scaler_wav = None
 
@@ -176,18 +182,9 @@ def initialize_app():
     scaler_orig = scalers_dict['original']
     scaler_wav = scalers_dict['wavelet']
     
-    # 4. Load ML Models
-    for config in config_names:
-        try:
-            from src.models import load_models
-            models_dict[config] = load_models(config)
-            logger.info(f"Loaded calibrated models for feature set '{config}'.")
-        except Exception as e:
-            logger.error(f"Error loading models for configuration '{config}': {str(e)}")
-            
-    # Set backward compatible global references
-    models_orig = models_dict.get('original', {})
-    models_wav = models_dict.get('wavelet', {})
+    # 4. Load ML Models (Lazy Loading Enabled to run successfully under Render 512MB RAM threshold)
+    # We do NOT pre-load any models at startup. They are loaded dynamically on demand in the API routes.
+    logger.info("Dynamic lazy loading enabled for ML models. Startup RAM footprint successfully minimized.")
     
     # 5. Load Geological Penalty Matrix & Stratigraphic Transition Matrix
     try:
@@ -207,6 +204,42 @@ def initialize_app():
             logger.warning("Geological transition matrix not found on disk yet.")
     except Exception as e:
         logger.error(f"Error loading geological transition matrix: {str(e)}")
+
+
+import gc
+
+def get_models_for_config(config):
+    """
+    Lazy-loads the trained calibrated models for the specified feature set configuration.
+    Keeps at most 2 active configurations in memory to stay safely within Render's 512MB RAM limit.
+    Performs proactive garbage collection sweeps to prevent memory growth.
+    """
+    global models_dict, models_orig, models_wav
+    if config not in models_dict:
+        # Clear other configurations to stay strictly below the 512MB threshold
+        if len(models_dict) >= 2:
+            logger.info("Memory threshold reached: flushing models_dict cache to free up RAM...")
+            models_dict.clear()
+            gc.collect()
+            
+        try:
+            from src.models import load_models
+            logger.info(f"Lazy loading calibrated models for feature set '{config}' from disk...")
+            loaded_models = load_models(config)
+            models_dict[config] = loaded_models
+            gc.collect()
+            logger.info(f"Successfully loaded models for configuration '{config}' (RAM optimized).")
+        except Exception as e:
+            logger.error(f"Error lazy loading models for '{config}': {str(e)}")
+            models_dict[config] = {}
+            
+        # Dynamically keep global variables updated for backward compatibility
+        if 'original' in models_dict:
+            models_orig = models_dict['original']
+        if 'wavelet' in models_dict:
+            models_wav = models_dict['wavelet']
+            
+    return models_dict[config]
 
 
 # Trigger initialization on startup
@@ -375,12 +408,15 @@ def get_well_model_comparison(well_id):
         medians19 = df_processed[WAVELET_COLS].median()
         X_raw19_all = X_raw19_all.fillna(medians19)
         
+        models_orig_local = get_models_for_config('original')
+        models_wav_local = get_models_for_config('wavelet')
+
         for name in model_names:
             try:
                 # 12F Original metrics
                 acc12, pen12, ham12 = 0.0, 0.0, 0.0
-                if name in models_orig:
-                    model12 = models_orig[name]
+                if name in models_orig_local:
+                    model12 = models_orig_local[name]
                     X_in12 = scaler_orig.transform(X_raw12_all) if name == 'KNN' else X_raw12_all.values
                     y_pred12 = model12.predict(X_in12).astype(int)[valid_mask]
                     m12 = get_classification_metrics(y_true_valid, y_pred12, penalty_matrix)
@@ -390,8 +426,8 @@ def get_well_model_comparison(well_id):
                     
                 # 19F Wavelet metrics
                 acc19, pen19, ham19 = 0.0, 0.0, 0.0
-                if name in models_wav:
-                    model19 = models_wav[name]
+                if name in models_wav_local:
+                    model19 = models_wav_local[name]
                     X_in19 = scaler_wav.transform(X_raw19_all) if name == 'KNN' else X_raw19_all.values
                     y_pred19 = model19.predict(X_in19).astype(int)[valid_mask]
                     m19 = get_classification_metrics(y_true_valid, y_pred19, penalty_matrix)
@@ -485,8 +521,8 @@ def run_prediction():
         if len(well_df) == 0:
             return jsonify({"error": f"Well {well_id} not found"}), 404
             
-        # Select active models dictionary
-        models = models_dict.get(feature_set, models_dict.get('original', {}))
+        # Select active models dictionary (lazy loaded on demand to protect cloud RAM)
+        models = get_models_for_config(feature_set)
         cols = features_dict.get(feature_set, features_dict.get('original', ORIGINAL_COLS))
         scaler = scalers_dict.get(feature_set, scalers_dict.get('original'))
         
@@ -607,8 +643,8 @@ def run_sandbox_prediction():
         if not model_name or not feature_vals:
             return jsonify({"error": "Missing model_name or features parameter"}), 400
             
-        # Select active models dictionary (always original 12 features for manual sliders)
-        models = models_orig
+        # Select active models dictionary (always original 12 features for manual sliders - lazy loaded)
+        models = get_models_for_config('original')
         cols = ORIGINAL_COLS
         scaler = scaler_orig
         
@@ -749,7 +785,8 @@ def upload_las_file():
         feature_set = request.form.get('feature_set', 'wavelet')
         use_viterbi = request.form.get('use_viterbi', 'false').lower() == 'true'
         
-        models = models_orig if feature_set == 'original' else models_wav
+        # Select active parameters for inference (lazy loaded on demand)
+        models = get_models_for_config(feature_set)
         cols = ORIGINAL_COLS if feature_set == 'original' else WAVELET_COLS
         scaler = scaler_orig if feature_set == 'original' else scaler_wav
         
@@ -836,11 +873,14 @@ def upload_las_file():
                     valid_mask_metrics = valid_mask
                     y_true_valid_metrics = y_true_valid
                 
+                models_orig_local = get_models_for_config('original')
+                models_wav_local = get_models_for_config('wavelet')
+
                 for name in model_names:
                     acc12, pen12, ham12 = 0.0, 0.0, 0.0
                     try:
-                        if name in models_orig:
-                            model12 = models_orig[name]
+                        if name in models_orig_local:
+                            model12 = models_orig_local[name]
                             X_raw12 = df_features_metrics[ORIGINAL_COLS]
                             X_in12 = scaler_orig.transform(X_raw12) if name == 'KNN' else X_raw12.values
                             y_pred12 = model12.predict(X_in12).astype(int)[valid_mask_metrics]
@@ -853,8 +893,8 @@ def upload_las_file():
                         
                     acc19, pen19, ham19 = 0.0, 0.0, 0.0
                     try:
-                        if name in models_wav:
-                            model19 = models_wav[name]
+                        if name in models_wav_local:
+                            model19 = models_wav_local[name]
                             X_raw19 = df_features_metrics[WAVELET_COLS]
                             X_in19 = scaler_wav.transform(X_raw19) if name == 'KNN' else X_raw19.values
                             y_pred19 = model19.predict(X_in19).astype(int)[valid_mask_metrics]
