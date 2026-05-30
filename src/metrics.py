@@ -110,3 +110,103 @@ def get_classification_metrics(y_true, y_pred, penalty_matrix=None):
         "HammingLoss": h_loss,
         "PenaltyScore": penalty_score
     }
+
+def calculate_ece(y_true, y_probs, n_bins=10):
+    """
+    Computes Expected Calibration Error (ECE) for multi-class classification.
+    y_true: 1D array of true labels of shape (N,)
+    y_probs: 2D array of class probabilities of shape (N, C)
+    """
+    y_true = np.array(y_true, dtype=int)
+    y_probs = np.array(y_probs)
+    
+    N = len(y_true)
+    confidences = np.max(y_probs, axis=1)
+    predictions = np.argmax(y_probs, axis=1)
+    accuracies = (predictions == y_true)
+    
+    ece = 0.0
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    
+    for i in range(n_bins):
+        bin_lower = bin_boundaries[i]
+        bin_upper = bin_boundaries[i + 1]
+        
+        # Find indices of samples in this confidence bin
+        in_bin = (confidences > bin_lower) & (confidences <= bin_upper)
+        prop_in_bin = np.mean(in_bin)
+        
+        if prop_in_bin > 0:
+            accuracy_in_bin = np.mean(accuracies[in_bin])
+            avg_confidence_in_bin = np.mean(confidences[in_bin])
+            ece += prop_in_bin * np.abs(accuracy_in_bin - avg_confidence_in_bin)
+            
+    return ece
+
+def generate_geological_confusion_report(y_true, y_pred, penalty_matrix=None, output_path='plots/geological_confusion_report.txt'):
+    """
+    Generates a detailed geological confusion analysis classifying errors by their geological plausibility
+    (High, Medium, and Low Plausibility/Severe geological penalties).
+    """
+    if penalty_matrix is None:
+        penalty_matrix = load_penalty_matrix()
+        
+    y_true = np.array(y_true, dtype=int)
+    y_pred = np.array(y_pred, dtype=int)
+    
+    LITHOLOGY_LABELS = [
+        'Sandstone', 'Sandstone/Shale', 'Shale', 'Marl', 'Dolomite', 'Limestone',
+        'Chalk', 'Halite', 'Anhydrite', 'Tuff', 'Coal', 'Basement'
+    ]
+    
+    total_samples = len(y_true)
+    total_errors = np.sum(y_true != y_pred)
+    
+    if total_errors == 0:
+        return "No errors found to report."
+        
+    high_plausible_count = 0
+    med_plausible_count = 0
+    severe_penalty_count = 0
+    
+    rare_classes = [9, 10, 11] # Tuff, Coal, Basement
+    rare_confusion_log = []
+    
+    for i in range(len(y_true)):
+        t = y_true[i]
+        p = y_pred[i]
+        if t != p:
+            penalty = penalty_matrix[t, p]
+            if penalty <= 0.5:
+                high_plausible_count += 1
+            elif penalty <= 1.2:
+                med_plausible_count += 1
+            else:
+                severe_penalty_count += 1
+                
+            if t in rare_classes or p in rare_classes:
+                rare_confusion_log.append(
+                    f"Sample {i}: True '{LITHOLOGY_LABELS[t]}' confused with Predicted '{LITHOLOGY_LABELS[p]}' (Penalty Cost: {penalty})"
+                )
+                
+    # Save text report
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w') as f:
+        f.write("=== GEOLOGICAL CONFUSION PLAUSIBILITY REPORT ===\n")
+        f.write(f"Total Test Samples: {total_samples}\n")
+        f.write(f"Total Misclassifications: {total_errors} ({total_errors/total_samples*100:.2f}% error rate)\n\n")
+        f.write(f"High Plausibility Confusions (Cost <= 0.5): {high_plausible_count} ({high_plausible_count/total_errors*100:.2f}% of errors)\n")
+        f.write(f"Medium Plausibility Confusions (0.5 < Cost <= 1.2): {med_plausible_count} ({med_plausible_count/total_errors*100:.2f}% of errors)\n")
+        f.write(f"Severe geological penalty / Implausible Confusions (Cost > 1.2): {severe_penalty_count} ({severe_penalty_count/total_errors*100:.2f}% of errors)\n\n")
+        f.write("--- RARE CLASS LITHOLOGY CONFUSION SAMPLES ---\n")
+        if len(rare_confusion_log) == 0:
+            f.write("No rare class confusions found.\n")
+        else:
+            for log_line in rare_confusion_log[:50]: # Limit to top 50 samples
+                f.write("- " + log_line + "\n")
+            if len(rare_confusion_log) > 50:
+                f.write(f"... and {len(rare_confusion_log) - 50} more rare class confusion incidents.\n")
+                
+    logger.info(f"Geological confusion plausibility report saved to {output_path}")
+    return output_path
+

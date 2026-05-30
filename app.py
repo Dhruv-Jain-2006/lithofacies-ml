@@ -4,15 +4,48 @@ import pickle
 import logging
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify as _orig_jsonify, render_template, request, send_from_directory
 from sklearn.preprocessing import StandardScaler
+
+def sanitize_json_value(val):
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return None
+    if isinstance(val, float) and np.isinf(val):
+        return None
+    if isinstance(val, dict):
+        return {k: sanitize_json_value(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple, np.ndarray)):
+        return [sanitize_json_value(x) for x in val]
+    if isinstance(val, (np.integer, int)):
+        return int(val)
+    if isinstance(val, (np.floating, float)):
+        return float(val)
+    # Check pandas Null/NA values explicitly
+    if pd.api.types.is_scalar(val) and pd.isna(val):
+        return None
+    return val
+
+def jsonify(*args, **kwargs):
+    if args:
+        if len(args) == 1:
+            data = args[0]
+        else:
+            data = list(args)
+    else:
+        data = kwargs
+    return _orig_jsonify(sanitize_json_value(data))
 
 # Add current directory and src to the path
 sys.path.append(os.path.abspath('.'))
 
+# Import new Prompt 3 research classes and sequence tools
+from src.models import WeightedCalibratedEnsemble
+from src.sequence import viterbi_decode
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -39,36 +72,59 @@ LITHOLOGY_COLORS = [
     '#922B21'   # 11: Basement (Crimson Maroon)
 ]
 
-ORIGINAL_COLS = ['DEPTH_MD', 'CALI', 'RSHA', 'RMED', 'RDEP', 'RHOB', 'GR', 'NPHI', 'PEF', 'DTC', 'SP', 'BS']
+ORIGINAL_COLS = ['RELATIVE_DEPTH', 'CALI', 'RSHA', 'RMED', 'RDEP', 'RHOB', 'GR', 'NPHI', 'PEF', 'DTC', 'SP', 'BS']
 WAVELET_LOGS = ['GR', 'NPHI', 'SP', 'RDEP', 'RHOB', 'DTC', 'PEF']
-WAVELET_COLS = ORIGINAL_COLS + [f"{col}_CWT" for col in WAVELET_LOGS]
+
+# Advanced geological feature lists
+PETRO_COLS = ['RHOB_minus_NPHI', 'RDEP_RMED_ratio', 'RMED_RSHA_ratio', 'acoustic_impedance', 'log_RDEP', 'log_RMED', 'log_RSHA']
+ROLL_COLS = [
+    'GR_roll_mean', 'RHOB_roll_mean', 'NPHI_roll_mean', 'DTC_roll_mean',
+    'GR_roll_std', 'RHOB_roll_std', 'NPHI_roll_std', 'DTC_roll_std',
+    'GR_roll_var', 'RHOB_roll_var',
+    'GR_gradient', 'RHOB_gradient', 'DTC_gradient'
+]
+CWT_BAND_COLS = []
+for log in WAVELET_LOGS:
+    CWT_BAND_COLS.extend([f"{log}_CWT_low", f"{log}_CWT_mid", f"{log}_CWT_high"])
+
+WAVELET_COLS = ORIGINAL_COLS + PETRO_COLS + ROLL_COLS + CWT_BAND_COLS
 
 # ---------------------------------------------------------
 # STARTUP LOADERS (DATA, MODELS, & SCALERS)
 # ---------------------------------------------------------
 df_processed = None
 cached_uploaded_well_df = None
+
+# Config-specific dictionaries for 5 configurations
+models_dict = {}
+scalers_dict = {}
+features_dict = {}
+
+# Backward compatible globally referenced models & scalers
 models_orig = {}
 models_wav = {}
 scaler_orig = None
 scaler_wav = None
+
 penalty_matrix = None
+transition_matrix = None
 
 def initialize_app():
-    global df_processed, models_orig, models_wav, scaler_orig, scaler_wav, penalty_matrix
+    global df_processed, models_dict, scalers_dict, features_dict, penalty_matrix, transition_matrix
+    global models_orig, models_wav, scaler_orig, scaler_wav, WAVELET_COLS
     
     # 1. Load Processed Dataset
     dataset_path = 'data/interim/processed_features.parquet'
     if not os.path.exists(dataset_path):
         logger.error(f"Processed dataset not found at {dataset_path}! Please run pipeline first.")
-        # Try processed parquet
         fallback_path = 'data/processed/merged_raw.parquet'
         if os.path.exists(fallback_path):
-            logger.info("Falling back to raw merged dataset...")
-            # Run missing/CWT dynamically to prepare it
-            from src.features import handle_missing_values, compute_cwt_features
+            logger.info("Falling back to raw merged dataset and engineering features dynamically...")
+            from src.features import handle_missing_values, compute_cwt_features, calculate_relative_depth, engineer_advanced_geological_features
             raw_df = pd.read_parquet(fallback_path)
+            raw_df = calculate_relative_depth(raw_df)
             clean_df = handle_missing_values(raw_df, ORIGINAL_COLS + ['LITHOLOGY'])
+            clean_df = engineer_advanced_geological_features(clean_df)
             df_processed = compute_cwt_features(clean_df, WAVELET_LOGS)
         else:
             raise FileNotFoundError("No well log dataset found in data/ directories.")
@@ -76,37 +132,82 @@ def initialize_app():
         df_processed = pd.read_parquet(dataset_path)
         logger.info(f"Loaded processed features dataset: {df_processed.shape}")
         
-    # 2. Build Scalers on Training Wells (Wells 1 to 8) to match verify_pipeline.py
-    wells = sorted(df_processed['WELL_ID'].unique())
-    train_wells = wells[:8]
-    df_train = df_processed[df_processed['WELL_ID'].isin(train_wells)]
+    # Define features configs with strict fallback lists
+    config_names = ['original', 'original_nodep', 'engineered', 'wavelet', 'wavelet_nodep']
     
-    logger.info(f"Fitting scalers on training wells: {train_wells}")
-    scaler_orig = StandardScaler().fit(df_train[ORIGINAL_COLS])
-    scaler_wav = StandardScaler().fit(df_train[WAVELET_COLS])
+    features_dict['original'] = ORIGINAL_COLS
+    features_dict['original_nodep'] = [c for c in ORIGINAL_COLS if c != 'RELATIVE_DEPTH']
+    features_dict['engineered'] = PETRO_COLS + ROLL_COLS + CWT_BAND_COLS
+    features_dict['wavelet'] = ORIGINAL_COLS + PETRO_COLS + ROLL_COLS + CWT_BAND_COLS
+    features_dict['wavelet_nodep'] = [c for c in features_dict['wavelet'] if c != 'RELATIVE_DEPTH']
     
-    # 3. Load ML Models
-    try:
-        from src.models import load_models
-        models_orig = load_models("original")
-        logger.info("Loaded 12-feature original models.")
-    except Exception as e:
-        logger.error(f"Error loading original models: {str(e)}")
-        
-    try:
-        from src.models import load_models
-        models_wav = load_models("wavelet")
-        logger.info("Loaded 19-feature wavelet models.")
-    except Exception as e:
-        logger.error(f"Error loading wavelet models: {str(e)}")
-        
-    # 4. Load Geological Penalty Matrix
+    # 2. Check for pruned feature lists dynamically from disk
+    for config in config_names:
+        feat_path = f'data/models/features_{config}.pkl'
+        if os.path.exists(feat_path):
+            try:
+                with open(feat_path, 'rb') as f:
+                    features_dict[config] = pickle.load(f)
+                logger.info(f"Dynamically aligned features list for '{config}': {len(features_dict[config])} features.")
+            except Exception as e:
+                logger.error(f"Error loading features list for {config}: {str(e)}")
+                
+    # Update WAVELET_COLS with the dynamically aligned one
+    WAVELET_COLS = features_dict['wavelet']
+    
+    # 3. Load Persisted Scalers (strictly load, do NOT fit unless fallback needed)
+    for config in config_names:
+        scaler_path = f'data/models/scaler_{config}.pkl'
+        if os.path.exists(scaler_path):
+            try:
+                with open(scaler_path, 'rb') as f:
+                    scalers_dict[config] = pickle.load(f)
+                logger.info(f"Loaded persisted scaler for '{config}' from disk.")
+            except Exception as e:
+                logger.error(f"Error loading scaler for {config}: {str(e)}")
+        else:
+            logger.warning(f"Persisted scaler for '{config}' not found! Fitting fallback scaler...")
+            wells = sorted(df_processed['WELL_ID'].unique())
+            train_wells = wells[:8]
+            df_train = df_processed[df_processed['WELL_ID'].isin(train_wells)]
+            scalers_dict[config] = StandardScaler().fit(df_train[features_dict[config]])
+            
+    # Set backward compatible global references
+    scaler_orig = scalers_dict['original']
+    scaler_wav = scalers_dict['wavelet']
+    
+    # 4. Load ML Models
+    for config in config_names:
+        try:
+            from src.models import load_models
+            models_dict[config] = load_models(config)
+            logger.info(f"Loaded calibrated models for feature set '{config}'.")
+        except Exception as e:
+            logger.error(f"Error loading models for configuration '{config}': {str(e)}")
+            
+    # Set backward compatible global references
+    models_orig = models_dict.get('original', {})
+    models_wav = models_dict.get('wavelet', {})
+    
+    # 5. Load Geological Penalty Matrix & Stratigraphic Transition Matrix
     try:
         from src.metrics import load_penalty_matrix
         penalty_matrix = load_penalty_matrix()
         logger.info("Loaded geological penalty matrix.")
     except Exception as e:
         logger.error(f"Error loading penalty matrix: {str(e)}")
+        
+    try:
+        transition_matrix_path = 'data/models/transition_matrix.pkl'
+        if os.path.exists(transition_matrix_path):
+            with open(transition_matrix_path, 'rb') as f:
+                transition_matrix = pickle.load(f)
+            logger.info("Loaded geological stratigraphic transition matrix successfully.")
+        else:
+            logger.warning("Geological transition matrix not found on disk yet.")
+    except Exception as e:
+        logger.error(f"Error loading geological transition matrix: {str(e)}")
+
 
 # Trigger initialization on startup
 startup_error = None
@@ -265,14 +366,22 @@ def get_well_model_comparison(well_id):
         results = []
         model_names = ['KNN', 'Random Forest', 'Decision Tree', 'XGBoost', 'LightGBM']
         
+        # Impute missing values with global training medians to prevent KNN/other NaN crashes
+        X_raw12_all = well_df_metrics[ORIGINAL_COLS].copy()
+        medians12 = df_processed[ORIGINAL_COLS].median()
+        X_raw12_all = X_raw12_all.fillna(medians12)
+        
+        X_raw19_all = well_df_metrics[WAVELET_COLS].copy()
+        medians19 = df_processed[WAVELET_COLS].median()
+        X_raw19_all = X_raw19_all.fillna(medians19)
+        
         for name in model_names:
             try:
                 # 12F Original metrics
                 acc12, pen12, ham12 = 0.0, 0.0, 0.0
                 if name in models_orig:
                     model12 = models_orig[name]
-                    X_raw12 = well_df_metrics[ORIGINAL_COLS]
-                    X_in12 = scaler_orig.transform(X_raw12) if name == 'KNN' else X_raw12.values
+                    X_in12 = scaler_orig.transform(X_raw12_all) if name == 'KNN' else X_raw12_all.values
                     y_pred12 = model12.predict(X_in12).astype(int)[valid_mask]
                     m12 = get_classification_metrics(y_true_valid, y_pred12, penalty_matrix)
                     acc12 = float(m12["Accuracy"])
@@ -283,8 +392,7 @@ def get_well_model_comparison(well_id):
                 acc19, pen19, ham19 = 0.0, 0.0, 0.0
                 if name in models_wav:
                     model19 = models_wav[name]
-                    X_raw19 = well_df_metrics[WAVELET_COLS]
-                    X_in19 = scaler_wav.transform(X_raw19) if name == 'KNN' else X_raw19.values
+                    X_in19 = scaler_wav.transform(X_raw19_all) if name == 'KNN' else X_raw19_all.values
                     y_pred19 = model19.predict(X_in19).astype(int)[valid_mask]
                     m19 = get_classification_metrics(y_true_valid, y_pred19, penalty_matrix)
                     acc19 = float(m19["Accuracy"])
@@ -313,11 +421,46 @@ def get_well_model_comparison(well_id):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+def calculate_uncertainty_metrics(probabilities):
+    """
+    Computes Shannon entropy, top-3 candidates with their probabilities,
+    and flags low confidence predictions (highest prob < 0.35) for each sample.
+    """
+    entropies = []
+    top3_candidates = []
+    low_confidence_flags = []
+    
+    for probs in probabilities:
+        # Shannon Entropy: -sum(p * log2(p))
+        # Add epsilon to prevent log(0)
+        eps = 1e-12
+        p_clipped = np.clip(probs, eps, 1.0)
+        entropy = -np.sum(probs * np.log2(p_clipped))
+        entropies.append(float(entropy))
+        
+        # Get top-3 candidate classes
+        top3_indices = np.argsort(probs)[::-1][:3]
+        candidates = []
+        for idx in top3_indices:
+            candidates.append({
+                "class_idx": int(idx),
+                "name": LITHOLOGY_LABELS[idx],
+                "probability": float(probs[idx]),
+                "color": LITHOLOGY_COLORS[idx]
+            })
+        top3_candidates.append(candidates)
+        
+        # Low confidence flag
+        highest_prob = float(np.max(probs))
+        low_confidence_flags.append(bool(highest_prob < 0.35))
+        
+    return entropies, top3_candidates, low_confidence_flags
+
 @app.route('/api/predict', methods=['POST'])
 def run_prediction():
     """
-    Runs ML model inference on the selected well.
-    Payload: { "well_id": "...", "model_name": "...", "feature_set": "original"|"wavelet" }
+    Runs ML model inference on the selected well with uncertainty estimation and Viterbi sequence smoothing.
+    Payload: { "well_id": "...", "model_name": "...", "feature_set": "original"|"wavelet", "use_viterbi": bool }
     """
     if df_processed is None:
         return jsonify({"error": "Dataset not loaded"}), 500
@@ -327,6 +470,7 @@ def run_prediction():
         well_id = data.get('well_id')
         model_name = data.get('model_name')
         feature_set = data.get('feature_set', 'original')
+        use_viterbi = data.get('use_viterbi', False)
         
         if not well_id or not model_name:
             return jsonify({"error": "Missing well_id or model_name parameter"}), 400
@@ -342,17 +486,19 @@ def run_prediction():
             return jsonify({"error": f"Well {well_id} not found"}), 404
             
         # Select active models dictionary
-        models = models_orig if feature_set == 'original' else models_wav
-        cols = ORIGINAL_COLS if feature_set == 'original' else WAVELET_COLS
-        scaler = scaler_orig if feature_set == 'original' else scaler_wav
+        models = models_dict.get(feature_set, models_dict.get('original', {}))
+        cols = features_dict.get(feature_set, features_dict.get('original', ORIGINAL_COLS))
+        scaler = scalers_dict.get(feature_set, scalers_dict.get('original'))
         
         if model_name not in models:
             return jsonify({"error": f"Model {model_name} not loaded for feature set {feature_set}"}), 400
             
         model = models[model_name]
         
-        # Prepare feature matrix
-        X_raw = well_df[cols]
+        # Prepare feature matrix and handle missing values using global dataset medians
+        X_raw = well_df[cols].copy()
+        medians = df_processed[cols].median()
+        X_raw = X_raw.fillna(medians)
         
         # Apply scaling if KNN
         if model_name == 'KNN':
@@ -363,19 +509,44 @@ def run_prediction():
         # Run predictions
         predictions = model.predict(X_input)
         
-        # Compute probabilities if supported
+        # Compute probabilities and advanced geological uncertainty
         try:
             probabilities = model.predict_proba(X_input)
-            # Find the probability of the predicted class for each sample
             max_probs = [float(p[pred]) for p, pred in zip(probabilities, predictions)]
-        except Exception:
-            # Fallback if model doesn't support predict_proba
+            entropies, top3_candidates, low_confidence_flags = calculate_uncertainty_metrics(probabilities)
+        except Exception as p_err:
+            logger.warning(f"Probability estimation failed, using flat fallbacks: {str(p_err)}")
+            probabilities = np.zeros((len(predictions), 12))
+            for idx, p_cls in enumerate(predictions):
+                probabilities[idx, int(p_cls)] = 1.0
             max_probs = [1.0] * len(predictions)
+            entropies = [0.0] * len(predictions)
+            top3_candidates = [
+                [{
+                    "class_idx": int(pred),
+                    "name": LITHOLOGY_LABELS[int(pred)],
+                    "probability": 1.0,
+                    "color": LITHOLOGY_COLORS[int(pred)]
+                }] for pred in predictions
+            ]
+            low_confidence_flags = [False] * len(predictions)
             
+        # Run Viterbi sequence smoothing
+        try:
+            if transition_matrix is not None:
+                viterbi_predictions = viterbi_decode(probabilities, transition_matrix).astype(int).tolist()
+            else:
+                fallback_trans = np.eye(12) * 0.95 + (1.0 - np.eye(12)) * (0.05 / 11.0)
+                viterbi_predictions = viterbi_decode(probabilities, fallback_trans).astype(int).tolist()
+        except Exception as vex:
+            logger.error(f"Viterbi sequence decoding failed: {str(vex)}")
+            viterbi_predictions = predictions.astype(int).tolist()
+            
+        # Active y_pred based on use_viterbi toggle
+        y_pred = np.array(viterbi_predictions) if use_viterbi else predictions.astype(int)
+        
         # Calculate evaluation metrics side-by-side with ground-truth
-        # Handle potential NaNs in the ground truth lithology labels safely
         y_true = well_df['LITHOLOGY'].fillna(-1).values.astype(int)
-        y_pred = predictions.astype(int)
         
         # Filter out unmapped indicators (-1)
         valid_mask = y_true >= 0
@@ -398,9 +569,14 @@ def run_prediction():
             "well_id": well_id,
             "model_name": model_name,
             "feature_set": feature_set,
-            "predictions": y_pred.tolist(),
+            "predictions": predictions.astype(int).tolist(),
+            "viterbi_predictions": viterbi_predictions,
             "probabilities": max_probs,
+            "entropies": entropies,
+            "top3_candidates": top3_candidates,
+            "low_confidence_flags": low_confidence_flags,
             "mismatches": mismatches,
+            "viterbi_applied": bool(use_viterbi),
             "metrics": {
                 "accuracy": accuracy,
                 "hamming_loss": hamming_loss,
@@ -412,6 +588,7 @@ def run_prediction():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/sandbox/predict', methods=['POST'])
 def run_sandbox_prediction():
@@ -524,6 +701,9 @@ def upload_las_file():
         if 'DEPTH_MD' not in df.columns:
             return jsonify({"error": "Uploaded LAS file is missing a DEPTH, DEPT, or DEPTH_MD curve"}), 400
             
+        # Calculate relative depth dynamically for the uploaded well
+        df['RELATIVE_DEPTH'] = (df['DEPTH_MD'] - df['DEPTH_MD'].min()) / (df['DEPTH_MD'].max() - df['DEPTH_MD'].min() + 1e-8)
+        
         # Populate missing columns with training dataset medians to prevent row drops
         for col in ORIGINAL_COLS:
             if col not in df.columns:
@@ -531,17 +711,21 @@ def upload_las_file():
                 df[col] = fallback_val
                 
         df['WELL_ID'] = 'uploaded_well'
+        df['WELL'] = 'uploaded_well'
         
         # Preprocess features
-        from src.features import handle_missing_values, compute_cwt_features
+        from src.features import handle_missing_values, compute_cwt_features, engineer_advanced_geological_features
         df_imputed = handle_missing_values(df, ORIGINAL_COLS)
         
         # In case entire rows were dropped, fallback to simple fillna
         if len(df_imputed) == 0:
             df_imputed = df.ffill().bfill().fillna(0.0)
             
+        # Compute all advanced petrophysical and rolling stats features
+        df_features = engineer_advanced_geological_features(df_imputed)
+        
         # Compute CWT coefficients dynamically
-        df_features = compute_cwt_features(df_imputed, WAVELET_LOGS)
+        df_features = compute_cwt_features(df_features, WAVELET_LOGS)
         cached_uploaded_well_df = df_features
         
         
@@ -563,6 +747,7 @@ def upload_las_file():
         # Select active parameters for inference
         model_name = request.form.get('model_name', 'Random Forest')
         feature_set = request.form.get('feature_set', 'wavelet')
+        use_viterbi = request.form.get('use_viterbi', 'false').lower() == 'true'
         
         models = models_orig if feature_set == 'original' else models_wav
         cols = ORIGINAL_COLS if feature_set == 'original' else WAVELET_COLS
@@ -580,13 +765,42 @@ def upload_las_file():
         # Run prediction
         predictions = model.predict(X_input).astype(int)
         
-        # Probabilities
+        # Compute probabilities and advanced geological uncertainty
         try:
             probabilities = model.predict_proba(X_input)
             max_probs = [float(p[pred]) for p, pred in zip(probabilities, predictions)]
-        except Exception:
+            entropies, top3_candidates, low_confidence_flags = calculate_uncertainty_metrics(probabilities)
+        except Exception as p_err:
+            logger.warning(f"Probability estimation failed, using flat fallbacks: {str(p_err)}")
+            probabilities = np.zeros((len(predictions), 12))
+            for idx, p_cls in enumerate(predictions):
+                probabilities[idx, int(p_cls)] = 1.0
             max_probs = [1.0] * len(predictions)
+            entropies = [0.0] * len(predictions)
+            top3_candidates = [
+                [{
+                    "class_idx": int(pred),
+                    "name": LITHOLOGY_LABELS[int(pred)],
+                    "probability": 1.0,
+                    "color": LITHOLOGY_COLORS[int(pred)]
+                }] for pred in predictions
+            ]
+            low_confidence_flags = [False] * len(predictions)
             
+        # Run Viterbi sequence smoothing
+        try:
+            if transition_matrix is not None:
+                viterbi_predictions = viterbi_decode(probabilities, transition_matrix).astype(int).tolist()
+            else:
+                fallback_trans = np.eye(12) * 0.95 + (1.0 - np.eye(12)) * (0.05 / 11.0)
+                viterbi_predictions = viterbi_decode(probabilities, fallback_trans).astype(int).tolist()
+        except Exception as vex:
+            logger.error(f"Viterbi sequence decoding failed: {str(vex)}")
+            viterbi_predictions = predictions.astype(int).tolist()
+            
+        # Active y_pred based on use_viterbi toggle
+        y_pred = np.array(viterbi_predictions) if use_viterbi else predictions
+        
         # Clean up temp file
         if os.path.exists(temp_path):
             os.remove(temp_path)
@@ -600,13 +814,13 @@ def upload_las_file():
             valid_mask = y_true >= 0
             if valid_mask.any():
                 y_true_valid = y_true[valid_mask]
-                metrics_res = get_classification_metrics(y_true_valid, predictions[valid_mask], penalty_matrix)
+                metrics_res = get_classification_metrics(y_true_valid, y_pred[valid_mask], penalty_matrix)
                 metrics = {
                     "accuracy": float(metrics_res["Accuracy"]),
                     "hamming_loss": float(metrics_res["HammingLoss"]),
                     "penalty_score": float(metrics_res["PenaltyScore"])
                 }
-                mismatches = (y_true != predictions).astype(int).tolist()
+                mismatches = (y_true != y_pred).astype(int).tolist()
                 
                 # Compute comparison_metrics for all 5 models (using downsampled dataset for cloud resource protection)
                 comparison_metrics = []
@@ -667,7 +881,11 @@ def upload_las_file():
             step = len(df_features) // 5000 + 1
             df_features_vis = df_features.iloc[::step].copy()
             predictions_vis = predictions[::step].tolist()
+            viterbi_predictions_vis = np.array(viterbi_predictions)[::step].tolist()
             max_probs_vis = np.array(max_probs)[::step].tolist()
+            entropies_vis = np.array(entropies)[::step].tolist()
+            top3_candidates_vis = [top3_candidates[i] for i in range(0, len(top3_candidates), step)]
+            low_confidence_flags_vis = np.array(low_confidence_flags)[::step].tolist()
             if mismatches is not None:
                 mismatches_vis = np.array(mismatches)[::step].tolist()
             else:
@@ -675,7 +893,11 @@ def upload_las_file():
         else:
             df_features_vis = df_features
             predictions_vis = predictions.tolist()
+            viterbi_predictions_vis = viterbi_predictions
             max_probs_vis = max_probs
+            entropies_vis = entropies
+            top3_candidates_vis = top3_candidates
+            low_confidence_flags_vis = low_confidence_flags
             mismatches_vis = mismatches
             
         # Map values to payload lists (replacing NaNs with None for JSON compliance)
@@ -692,12 +914,17 @@ def upload_las_file():
             "feature_set": feature_set,
             "well_data": payload,
             "predictions": predictions_vis,
+            "viterbi_predictions": viterbi_predictions_vis,
             "probabilities": max_probs_vis,
+            "entropies": entropies_vis,
+            "top3_candidates": top3_candidates_vis,
+            "low_confidence_flags": low_confidence_flags_vis,
             "has_ground_truth": has_gt,
             "mismatches": mismatches_vis,
             "metrics": metrics,
             "comparison_metrics": comparison_metrics
         })
+
         
     except Exception as e:
         logger.error(f"LAS Upload API Error: {str(e)}")

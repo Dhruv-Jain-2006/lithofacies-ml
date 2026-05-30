@@ -7,6 +7,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LithoFacies ML — Subsurface Geologic Intelligence</title>
 
+  <!-- Website Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.85em' font-size='88' font-family='sans-serif' text-anchor='middle' x='50' fill='%2300ff88'%3E◈%3C/text%3E%3C/svg%3E">
+
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -420,11 +423,8 @@
           requestAnimationFrame(step);
         };
 
-        const observer = new IntersectionObserver(([entry]) => {
-          if (entry.isIntersecting) { runCount(); observer.disconnect(); }
-        }, { threshold: 0.5 });
-        observer.observe(el);
-        return () => observer.disconnect();
+        const timer = setTimeout(runCount, 150);
+        return () => clearTimeout(timer);
       }, [target]);
     };
 
@@ -456,6 +456,28 @@
     const normalizeDatasetName = (name) => {
       if (!name) return '';
       return name.replace(/[\u2014\u2013-]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
+    };
+
+    const getSparklinePath = (dataArray, minVal, maxVal, width = 200, height = 40, closed = false) => {
+      if (!dataArray || dataArray.length === 0) return '';
+      const len = dataArray.length;
+      const maxPoints = 60;
+      const step = Math.max(1, Math.floor(len / maxPoints));
+      const points = [];
+      for (let idx = 0; idx < len; idx += step) {
+        const val = dataArray[idx];
+        if (val === null || val === undefined || isNaN(val)) continue;
+        const norm = (val - minVal) / (maxVal - minVal);
+        const x = (idx / (len - 1)) * width;
+        const y = height - Math.max(0, Math.min(height, norm * height));
+        points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+      }
+      if (points.length === 0) return '';
+      let path = 'M' + points.join(' L');
+      if (closed) {
+        path += ` L${width},${height} L0,${height} Z`;
+      }
+      return path;
     };
 
     // Preloaded Datasets selection configurations
@@ -624,8 +646,8 @@
         let meanVal = base.mean;
         let status = 'Optimal';
 
-        if (wellLogs && wellLogs.well_data) {
-          const arr = wellLogs.well_data[attrKey];
+        if (wellLogs && wellLogs.originalData) {
+          const arr = wellLogs.originalData[attrKey];
           if (Array.isArray(arr) && arr.length > 0) {
             const validVals = arr.filter(v => v !== null && v !== undefined && !isNaN(v));
             if (validVals.length > 0) {
@@ -745,12 +767,13 @@
     };
 
     // Custom 5-Track SVG Well Log track visualizer
-    const WellTrackVisualizer = ({ wellLogs }) => {
+    const WellTrackVisualizer = ({ wellLogs, useViterbi = true }) => {
       if (!wellLogs) return null;
 
+      const predictionsList = useViterbi ? (wellLogs.viterbiPredictions || wellLogs.predictions) : wellLogs.predictions;
       const defaultIndex = Math.min(150, wellLogs.depth.length - 1);
       const initialDepth = wellLogs.depth[defaultIndex] || 0;
-      const initialPred = wellLogs.predictions[defaultIndex] || 'Shale';
+      const initialPred = predictionsList[defaultIndex] || 'Shale';
       const initialProb = wellLogs.probabilities[defaultIndex] || 1.0;
 
       // Sync local depth indexing coordinate dynamically via high-performance direct DOM updates
@@ -760,8 +783,9 @@
         const totalHeight = rect.height;
         const idx = Math.max(0, Math.min(wellLogs.depth.length - 1, Math.floor((relativeY / totalHeight) * wellLogs.depth.length)));
 
+        const predictionsList = useViterbi ? (wellLogs.viterbiPredictions || wellLogs.predictions) : wellLogs.predictions;
         const activeDepth = wellLogs.depth[idx];
-        const activePred = wellLogs.predictions[idx];
+        const activePred = predictionsList[idx];
         const activeProb = wellLogs.probabilities[idx];
 
         // Elements to update
@@ -777,6 +801,8 @@
         const elValNphi = document.getElementById('val-nphi');
         const elValRmed = document.getElementById('val-rmed');
         const elValDtc = document.getElementById('val-dtc');
+        const elValEnt = document.getElementById('val-ent');
+        const elCandidatesList = document.getElementById('hud-candidates-list');
 
         // Mutate values instantly
         if (elDepth) elDepth.textContent = activeDepth.toFixed(1) + ' m';
@@ -785,7 +811,7 @@
           elPred.style.color = FACIES_COLOR_MAP[activePred] || '#ffffff';
         }
         if (elProb) elProb.textContent = 'Confidence: ' + (activeProb * 100).toFixed(1) + '%';
-        if (elFaciesPointer) elFaciesPointer.style.top = `${(idx / wellLogs.predictions.length) * 100}%`;
+        if (elFaciesPointer) elFaciesPointer.style.top = `${(idx / predictionsList.length) * 100}%`;
         if (elCursorLine) {
           elCursorLine.style.top = `${(relativeY / totalHeight) * 480}px`;
           elCursorLine.style.display = 'block';
@@ -797,6 +823,17 @@
         if (elValNphi && wellLogs.NPHI) elValNphi.textContent = wellLogs.NPHI[idx] !== null && wellLogs.NPHI[idx] !== undefined ? wellLogs.NPHI[idx].toFixed(2) : 'N/A';
         if (elValRmed && wellLogs.RMED) elValRmed.textContent = wellLogs.RMED[idx] !== null && wellLogs.RMED[idx] !== undefined ? wellLogs.RMED[idx].toFixed(2) : 'N/A';
         if (elValDtc && wellLogs.DTC) elValDtc.textContent = wellLogs.DTC[idx] !== null && wellLogs.DTC[idx] !== undefined ? wellLogs.DTC[idx].toFixed(2) : 'N/A';
+        if (elValEnt && wellLogs.entropies) elValEnt.textContent = wellLogs.entropies[idx] !== null && wellLogs.entropies[idx] !== undefined ? wellLogs.entropies[idx].toFixed(2) : 'N/A';
+
+        const activeCandidates = wellLogs.top3Candidates && wellLogs.top3Candidates[idx] ? wellLogs.top3Candidates[idx] : [];
+        if (elCandidatesList) {
+          elCandidatesList.innerHTML = activeCandidates.map(c => `
+            <span class="text-[9px] font-mono px-2 py-0.5 rounded border border-white/5 bg-void/60 flex items-center gap-1.5" style="color: ${c.color}">
+              <span class="w-1.5 h-1.5 rounded-full" style="background-color: ${c.color}"></span>
+              ${c.name} (${(c.probability * 100).toFixed(0)}%)
+            </span>
+          `).join('');
+        }
       };
 
       // Draw individual curve traces with high-performance decimation to prevent SVG rendering lag
@@ -822,12 +859,25 @@
           <div className="grid grid-cols-12 gap-4 bg-void p-6 rounded-2xl border border-border-subtle relative min-w-[680px] md:min-w-0">
 
             {/* Hover floating coordinate dashboard HUD */}
-            <div className="col-span-12 flex justify-between items-center bg-elevated/80 border border-border-accent/20 px-4 py-2.5 rounded-xl backdrop-blur-md">
-              <div className="flex gap-4">
+            <div className="col-span-12 flex flex-col md:flex-row justify-between items-start md:items-center bg-elevated/80 border border-border-accent/20 px-4 py-2.5 rounded-xl backdrop-blur-md gap-3">
+              <div className="flex flex-wrap gap-4 items-center">
                 <span className="text-xs font-mono text-text-secondary">ACTIVE DEPTH: <strong id="hud-depth" className="text-accent-primary text-sm">{initialDepth.toFixed(1)} m</strong></span>
                 <span className="text-xs font-mono text-text-secondary">FACIES CLASSIFICATION: <strong id="hud-pred" className="text-accent-secondary text-sm" style={{ color: FACIES_COLOR_MAP[initialPred] }}>{initialPred}</strong></span>
+                
+                {/* Dynamic Candidates list wrapper */}
+                <div id="hud-candidates-container" className="flex items-center gap-2 border-l border-white/10 pl-4">
+                  <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">Alt Candidates:</span>
+                  <div id="hud-candidates-list" className="flex flex-wrap gap-1.5">
+                    {(wellLogs.top3Candidates && wellLogs.top3Candidates[defaultIndex] ? wellLogs.top3Candidates[defaultIndex] : []).map((c, i) => (
+                      <span key={i} className="text-[9px] font-mono px-2 py-0.5 rounded border border-white/5 bg-void/60 flex items-center gap-1.5" style={{ color: c.color }}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c.color }}></span>
+                        {c.name} ({(c.probability * 100).toFixed(0)}%)
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <span id="hud-prob" className="text-xs font-mono text-accent-primary bg-accent-glow px-2.5 py-1 rounded">Confidence: {(initialProb * 100).toFixed(1)}%</span>
+              <span id="hud-prob" className="text-xs font-mono text-accent-primary bg-accent-glow px-2.5 py-1 rounded self-end md:self-auto">Confidence: {(initialProb * 100).toFixed(1)}%</span>
             </div>
 
             {/* Side column: Interactive Lithofacies scrollbar strip */}
@@ -835,12 +885,12 @@
               <div className="text-[10px] font-mono text-accent-primary uppercase mb-2">Facies Column</div>
               <div className="w-16 h-[480px] relative rounded-lg border border-border-subtle overflow-hidden">
                 {(() => {
-                  const len = wellLogs.predictions.length;
+                  const len = predictionsList.length;
                   const maxDivs = 480;
                   const step = Math.max(1, Math.floor(len / maxDivs));
                   const divs = [];
                   for (let i = 0; i < len; i += step) {
-                    const p = wellLogs.predictions[i];
+                    const p = predictionsList[i];
                     divs.push(
                       <div
                         key={i}
@@ -859,12 +909,12 @@
                 <div
                   id="facies-pointer"
                   className="absolute left-0 w-full h-[2px] bg-white shadow-[0_0_12px_#fff] z-10"
-                  style={{ top: `${(defaultIndex / wellLogs.predictions.length) * 100}%` }}
+                  style={{ top: `${(defaultIndex / predictionsList.length) * 100}%` }}
                 ></div>
               </div>
             </div>
 
-            {/* Five Parallel SVG Mineral Curve Tracks */}
+            {/* Parallel SVG Mineral Curve Tracks (Now 6 Tracks!) */}
             <div className="col-span-10 flex gap-2 h-[480px] bg-void/50 border border-border-subtle rounded-xl p-2 relative cursor-ns-resize overflow-hidden" onMouseMove={handleTrackMouseMove}>
 
               {/* Dynamic Y Axis overlay alignment line */}
@@ -923,13 +973,24 @@
               </div>
 
               {/* TRACK 5: Acoustic Travel (DTC) - purple */}
-              <div className="flex-1 h-full relative">
+              <div className="flex-1 h-full border-r border-border-subtle/50 relative">
                 <div className="text-[9px] font-mono text-center text-purple-400 absolute top-1 left-0 right-0 z-10 bg-void/80 py-0.5">DTC (40-140)</div>
                 <svg className="w-full h-full">
                   <polyline fill="none" stroke="#C084FC" strokeWidth="1.5" points={getSVGPoints(wellLogs.DTC, 40, 140)} />
                 </svg>
                 <span id="val-dtc" className="absolute bottom-2 left-2 text-[10px] font-mono text-purple-400">
                   {wellLogs.DTC[defaultIndex] !== null && wellLogs.DTC[defaultIndex] !== undefined ? wellLogs.DTC[defaultIndex].toFixed(2) : 'N/A'}
+                </span>
+              </div>
+
+              {/* TRACK 6: Shannon Entropy (ENTROPY) - hot-pink */}
+              <div className="flex-1 h-full relative">
+                <div className="text-[9px] font-mono text-center text-pink-500 absolute top-1 left-0 right-0 z-10 bg-void/80 py-0.5">ENTROPY (0-3.5)</div>
+                <svg className="w-full h-full">
+                  <polyline fill="none" stroke="#FF007F" strokeWidth="1.5" points={getSVGPoints(wellLogs.entropies, 0, 3.5)} />
+                </svg>
+                <span id="val-ent" className="absolute bottom-2 left-2 text-[10px] font-mono text-pink-500">
+                  {wellLogs.entropies && wellLogs.entropies[defaultIndex] !== null && wellLogs.entropies[defaultIndex] !== undefined ? wellLogs.entropies[defaultIndex].toFixed(2) : 'N/A'}
                 </span>
               </div>
 
@@ -1237,32 +1298,21 @@
     };
 
     // Global App Component
-    // Global App Component
     function App() {
       const [isInitializing, setIsInitializing] = useState(true);
 
-      // Navigation states: 'landing', 'upload', 'results'
-      const [currentRoute, setCurrentRoute] = useState(() => {
-        const saved = localStorage.getItem('lithofacies_route');
-        return (saved && saved !== 'undefined') ? saved : 'landing';
-      });
-      const [activeTab, setActiveTab] = useState(() => {
-        const saved = localStorage.getItem('lithofacies_tab');
-        return (saved && saved !== 'undefined') ? saved : 'prediction';
-      });
+      // Navigation states: always default to 'landing' and 'prediction' on reload
+      const [currentRoute, setCurrentRoute] = useState('landing');
+      const [activeTab, setActiveTab] = useState('prediction');
 
-      // Selected database references
-      const [selectedWell, setSelectedWell] = useState(() => {
-        const saved = localStorage.getItem('lithofacies_well');
-        return (saved && saved !== 'undefined' && saved !== 'WELL_CUSTOM' && saved !== 'uploaded_well') ? saved : 'WELL_FORCE_2020_01';
-      });
-      const [selectedDatasetName, setSelectedDatasetName] = useState(() => {
-        const saved = localStorage.getItem('lithofacies_dataset');
-        return (saved && saved !== 'undefined') ? saved : 'Norway — FORCE 2020 Full';
-      });
+      // Selected database references: always default to dataset 01 on reload
+      const [selectedWell, setSelectedWell] = useState('WELL_FORCE_2020_01');
+      const [selectedDatasetName, setSelectedDatasetName] = useState('Norway — FORCE 2020 Full');
+      
       const [uploadedFile, setUploadedFile] = useState(null);
       const [uploadError, setUploadError] = useState(null);
       const [analysisLoading, setAnalysisLoading] = useState(false);
+      const [backgroundLoading, setBackgroundLoading] = useState(false);
       const [loadingStep, setLoadingStep] = useState(0);
       const [isHeroCtaScrolledOut, setIsHeroCtaScrolledOut] = useState(false);
 
@@ -1279,6 +1329,14 @@
       // File upload hidden inputs refs
       const fileInputRef = useRef(null);
       const heroCtaRef = useRef(null);
+
+      // Scroll to top and reset routing storage keys on mount
+      useEffect(() => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        localStorage.setItem('lithofacies_route', 'landing');
+        localStorage.setItem('lithofacies_well', 'WELL_FORCE_2020_01');
+        localStorage.setItem('lithofacies_dataset', 'Norway — FORCE 2020 Full');
+      }, []);
 
       // Save state variables to localStorage when they change and reset scroll position to top
       useEffect(() => {
@@ -1329,6 +1387,7 @@
       }, [selectedWell]);
 
       const handleLogoClick = () => {
+        if (analysisLoading) return;
         setCurrentRoute('landing');
         window.scrollTo({ top: 0, behavior: 'smooth' });
       };
@@ -1386,6 +1445,7 @@
         const saved = localStorage.getItem('lithofacies_feature_set');
         return (saved && saved !== 'undefined') ? saved : 'wavelet';
       });
+      const [useViterbi, setUseViterbi] = useState(true);
 
       useEffect(() => {
         localStorage.setItem('lithofacies_model', selectedModel);
@@ -1407,24 +1467,28 @@
       const [waveletLogSelect, setWaveletLogSelect] = useState('GR');
 
       // Pipeline execution orchestrator
-      const executePipeline = (fileToUpload = null, silent = false, wellOverride = null) => {
+      const executePipeline = (fileToUpload = null, silent = false, wellOverride = null, modelOverride = null, featureSetOverride = null) => {
         setUploadError(null);
         if (!silent) {
           setAnalysisLoading(true);
           setLoadingStep(0);
+          setWellLogs(null);
+        } else {
+          setBackgroundLoading(true);
         }
 
         let apiPromise;
         const isUpload = !!fileToUpload;
         const activeWell = wellOverride || selectedWell;
-        const activeModel = selectedModel;
-        const activeFeatureSet = selectedFeatureSet;
+        const activeModel = modelOverride || selectedModel;
+        const activeFeatureSet = featureSetOverride || selectedFeatureSet;
 
         if (isUpload) {
           const formData = new FormData();
           formData.append('file', fileToUpload);
           formData.append('model_name', activeModel);
           formData.append('feature_set', activeFeatureSet);
+          formData.append('use_viterbi', useViterbi ? 'true' : 'false');
 
           apiPromise = fetch('/api/upload', {
             method: 'POST',
@@ -1438,21 +1502,14 @@
           });
         } else {
            // Preloaded well log curves and prediction
-          const fetchWellData = fetch(`/api/well/${activeWell}`).then(async (res) => {
-            if (!res.ok) {
-              const errData = await res.json().catch(() => ({}));
-              throw new Error(errData.error || `Failed to fetch well curves for ${activeWell}`);
-            }
-            return res.json();
-          });
-
           const fetchPrediction = fetch('/api/predict', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               well_id: activeWell,
               model_name: activeModel,
-              feature_set: activeFeatureSet
+              feature_set: activeFeatureSet,
+              use_viterbi: useViterbi
             })
           }).then(async (res) => {
             if (!res.ok) {
@@ -1462,24 +1519,57 @@
             return res.json();
           });
 
-          const fetchCompare = fetch(`/api/well/${activeWell}/compare`).then(async (res) => {
-            if (!res.ok) return [];
-            return res.json();
-          }).catch(() => []);
+          const isSameWell = wellLogs && activeWell === wellLogs.well_id;
+          if (silent && isSameWell) {
+            apiPromise = fetchPrediction.then((predData) => {
+              return {
+                well_id: activeWell,
+                model_name: activeModel,
+                feature_set: activeFeatureSet,
+                well_data: wellLogs.originalData, // Reuse cached curve dataset
+                predictions: predData.predictions,
+                viterbi_predictions: predData.viterbi_predictions,
+                probabilities: predData.probabilities,
+                entropies: predData.entropies,
+                top3_candidates: predData.top3_candidates,
+                low_confidence_flags: predData.low_confidence_flags,
+                mismatches: predData.mismatches,
+                metrics: predData.metrics,
+                comparison_metrics: benchmarkScores // Reuse cached benchmarks
+              };
+            });
+          } else {
+            const fetchWellData = fetch(`/api/well/${activeWell}`).then(async (res) => {
+              if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Failed to fetch well curves for ${activeWell}`);
+              }
+              return res.json();
+            });
 
-          apiPromise = Promise.all([fetchWellData, fetchPrediction, fetchCompare]).then(([wellData, predData, compareData]) => {
-            return {
-              well_id: activeWell,
-              model_name: activeModel,
-              feature_set: activeFeatureSet,
-              well_data: wellData,
-              predictions: predData.predictions,
-              probabilities: predData.probabilities,
-              mismatches: predData.mismatches,
-              metrics: predData.metrics,
-              comparison_metrics: compareData
-            };
-          });
+            const fetchCompare = fetch(`/api/well/${activeWell}/compare`).then(async (res) => {
+              if (!res.ok) return [];
+              return res.json();
+            }).catch(() => []);
+
+            apiPromise = Promise.all([fetchWellData, fetchPrediction, fetchCompare]).then(([wellData, predData, compareData]) => {
+              return {
+                well_id: activeWell,
+                model_name: activeModel,
+                feature_set: activeFeatureSet,
+                well_data: wellData,
+                predictions: predData.predictions,
+                viterbi_predictions: predData.viterbi_predictions,
+                probabilities: predData.probabilities,
+                entropies: predData.entropies,
+                top3_candidates: predData.top3_candidates,
+                low_confidence_flags: predData.low_confidence_flags,
+                mismatches: predData.mismatches,
+                metrics: predData.metrics,
+                comparison_metrics: compareData
+              };
+            });
+          }
         }
 
         // Run the step progression animation concurrently
@@ -1501,6 +1591,7 @@
             
             // Map prediction integers to facies label strings
             const mappedPredictions = data.predictions.map(idx => LITHOLOGY_LABELS[idx]);
+            const mappedViterbiPredictions = data.viterbi_predictions ? data.viterbi_predictions.map(idx => LITHOLOGY_LABELS[idx]) : mappedPredictions;
             
             // Extract dynamic dominant stats
             const counts = {};
@@ -1543,7 +1634,17 @@
               RMED: data.well_data.RMED || data.well_data.DEPTH_MD.map(() => 0),
               DTC: data.well_data.DTC || data.well_data.DEPTH_MD.map(() => 0),
               predictions: mappedPredictions,
+              viterbiPredictions: mappedViterbiPredictions,
               probabilities: data.probabilities,
+              entropies: data.entropies || data.well_data.DEPTH_MD.map(() => 0),
+              top3Candidates: data.top3_candidates ? data.top3_candidates.map(list => {
+                return list.map(c => ({
+                  name: LITHOLOGY_LABELS[c.class_idx] || `Class ${c.class_idx}`,
+                  color: FACIES_COLOR_MAP[LITHOLOGY_LABELS[c.class_idx]] || '#ffffff',
+                  probability: c.probability
+                }));
+              }) : data.well_data.DEPTH_MD.map(() => []),
+              lowConfidenceFlags: data.low_confidence_flags || data.well_data.DEPTH_MD.map(() => false),
               mismatches: data.mismatches,
               metrics: data.metrics,
               originalData: data.well_data
@@ -1557,11 +1658,14 @@
                 setActiveTab('prediction');
                 setLoadingStep(0);
               }, 300);
+            } else {
+              setBackgroundLoading(false);
             }
           })
           .catch((err) => {
             if (interval) clearInterval(interval);
             console.error("Pipeline failure:", err);
+            setBackgroundLoading(false);
             if (!silent && !isInitializing) {
               setAnalysisLoading(false);
               setLoadingStep(0);
@@ -1582,7 +1686,7 @@
         }
       };
 
-      // Load initial predictions on mount silently
+      // Set initial states on mount without blocking the single-threaded server
       useEffect(() => {
         let wellToLoad = selectedWell;
         if (wellToLoad === 'WELL_CUSTOM' || wellToLoad === 'uploaded_well' || !wellToLoad) {
@@ -1590,18 +1694,15 @@
           setSelectedWell('WELL_FORCE_2020_01');
           setSelectedDatasetName('Norway — FORCE 2020 Full');
         }
-        
-        executePipeline(null, true, wellToLoad).finally(() => {
-          setIsInitializing(false);
-        });
+        setIsInitializing(false);
       }, []);
 
-      // Auto re-run prediction silently in background if selectedModel, selectedFeatureSet, or selectedWell changes during results view
+      // Auto re-run prediction silently in background if selectedModel, selectedFeatureSet, selectedWell, or useViterbi changes during results view
       useEffect(() => {
         if (currentRoute === 'results' && !isInitializing) {
           executePipeline(uploadedFile, true);
         }
-      }, [selectedModel, selectedFeatureSet, selectedWell, currentRoute, isInitializing]);
+      }, [selectedModel, selectedFeatureSet, selectedWell, useViterbi, currentRoute, isInitializing]);
 
       // Helper function to return dynamic class distribution list for diagnostics tab
       const getClassDistributionData = () => {
@@ -1681,50 +1782,64 @@
                 </div>
 
                 {/* Tab Navigation Menu Options */}
-                <div className="flex items-center gap-3 sm:gap-6 md:gap-10 text-[10px] sm:text-xs md:text-sm font-heading font-bold uppercase tracking-wider">
+                <div className="flex items-center gap-5 sm:gap-6 md:gap-10 text-xs sm:text-xs md:text-sm font-heading font-bold uppercase tracking-wider">
                   <button
-                    onClick={() => setActiveTab('prediction')}
-                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 hover:text-accent-secondary ${activeTab === 'prediction' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`}
+                    onClick={() => { if (analysisLoading) return; setActiveTab('prediction'); }}
+                    disabled={analysisLoading}
+                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 ${
+                      analysisLoading
+                        ? 'text-text-secondary/40 cursor-not-allowed'
+                        : `hover:text-accent-secondary ${activeTab === 'prediction' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`
+                    }`}
                   >
                     Prediction
-                    {activeTab === 'prediction' ? (
+                    {activeTab === 'prediction' && !analysisLoading && (
                       <span className="absolute left-0 bottom-0 w-full h-[2px] bg-accent-primary shadow-[0_0_8px_#38B6FF] animate-pulse"></span>
-                    ) : (
-                      <span className="absolute left-0 bottom-0 w-0 h-[2px] bg-accent-primary/50 group-hover:w-full transition-all duration-300"></span>
                     )}
                   </button>
                   <button
-                    onClick={() => setActiveTab('analysis')}
-                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 hover:text-accent-secondary ${activeTab === 'analysis' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`}
+                    onClick={() => { if (analysisLoading) return; setActiveTab('analysis'); }}
+                    disabled={analysisLoading}
+                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 ${
+                      analysisLoading
+                        ? 'text-text-secondary/40 cursor-not-allowed'
+                        : `hover:text-accent-secondary ${activeTab === 'analysis' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`
+                    }`}
                   >
                     Data Analysis
-                    {activeTab === 'analysis' ? (
+                    {activeTab === 'analysis' && !analysisLoading && (
                       <span className="absolute left-0 bottom-0 w-full h-[2px] bg-accent-primary shadow-[0_0_8px_#38B6FF] animate-pulse"></span>
-                    ) : (
-                      <span className="absolute left-0 bottom-0 w-0 h-[2px] bg-accent-primary/50 group-hover:w-full transition-all duration-300"></span>
                     )}
                   </button>
                   <button
-                    onClick={() => setActiveTab('comparison')}
-                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 hover:text-accent-secondary ${activeTab === 'comparison' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`}
+                    onClick={() => { if (analysisLoading) return; setActiveTab('comparison'); }}
+                    disabled={analysisLoading}
+                    className={`relative py-1.5 sm:py-2.5 transition-all duration-300 ${
+                      analysisLoading
+                        ? 'text-text-secondary/40 cursor-not-allowed'
+                        : `hover:text-accent-secondary ${activeTab === 'comparison' ? 'text-accent-primary font-black scale-105' : 'text-text-secondary hover:scale-105'}`
+                    }`}
                   >
                     Model Comparison
-                    {activeTab === 'comparison' ? (
+                    {activeTab === 'comparison' && !analysisLoading && (
                       <span className="absolute left-0 bottom-0 w-full h-[2px] bg-accent-primary shadow-[0_0_8px_#38B6FF] animate-pulse"></span>
-                    ) : (
-                      <span className="absolute left-0 bottom-0 w-0 h-[2px] bg-accent-primary/50 group-hover:w-full transition-all duration-300"></span>
                     )}
                   </button>
                 </div>
 
                 {/* Call-to-action Dynamic Actions */}
                 <div className="flex items-center gap-2 sm:gap-4 text-xs font-mono">
-                  <span className="bg-elevated border border-border-subtle px-2.5 py-1.5 sm:px-3 rounded-full text-accent-secondary text-[9px] sm:text-xs truncate max-w-[80px] sm:max-w-[120px] md:max-w-none block">
+                  <span className="bg-elevated border border-border-subtle px-2.5 py-1.5 sm:px-3 rounded-full text-accent-secondary text-[9px] sm:text-xs truncate max-w-[80px] sm:max-w-[120px] md:max-w-none hidden md:block">
                     {selectedDatasetName}
                   </span>
                   <button
-                    onClick={() => setCurrentRoute('upload')}
-                    className="bg-[#A7F9CC] text-void hover:bg-[#A7F9CC]/90 transition-all duration-300 font-bold px-3.5 py-3.5 sm:px-6 sm:py-3 rounded-full font-heading uppercase tracking-widest text-[9px] sm:text-xs shadow-[0_0_20px_rgba(167,249,204,0.15)] hover:shadow-[0_0_30px_rgba(167,249,204,0.3)] hover:scale-[1.03] flex items-center justify-center gap-1.5"
+                    onClick={() => { if (analysisLoading) return; setCurrentRoute('upload'); }}
+                    disabled={analysisLoading}
+                    className={`font-heading font-bold uppercase tracking-widest text-[9px] sm:text-xs rounded-full px-3.5 py-3.5 sm:px-6 sm:py-3 transition-all duration-300 flex items-center justify-center gap-1.5 ${
+                      analysisLoading
+                        ? 'bg-white/[0.04] border border-white/10 text-white/20 cursor-not-allowed shadow-none'
+                        : 'bg-[#A7F9CC] text-void hover:bg-[#A7F9CC]/90 shadow-[0_0_20px_rgba(167,249,204,0.15)] hover:shadow-[0_0_30px_rgba(167,249,204,0.3)] hover:scale-[1.03]'
+                    }`}
                     title="Re-upload Dataset"
                   >
                     <span className="hidden sm:inline">Re-upload</span>
@@ -1761,8 +1876,13 @@
                   }`}
                 >
                   <button
-                    onClick={() => setCurrentRoute('upload')}
-                    className={`btn-primary bg-[#A7F9CC] text-void font-heading font-bold text-[10px] sm:text-xs tracking-wider rounded-full shadow-[0_0_20px_rgba(167,249,204,0.15)] flex items-center justify-center gap-1.5 whitespace-nowrap px-5 py-2 sm:px-6 sm:py-2.5 transition-all duration-500 ${
+                    onClick={() => { if (analysisLoading) return; setCurrentRoute('upload'); }}
+                    disabled={analysisLoading}
+                    className={`btn-primary font-heading font-bold text-[10px] sm:text-xs tracking-wider rounded-full flex items-center justify-center gap-1.5 whitespace-nowrap px-5 py-2 sm:px-6 sm:py-2.5 transition-all duration-500 ${
+                      analysisLoading
+                        ? 'bg-white/[0.04] border border-white/10 text-white/20 cursor-not-allowed shadow-none opacity-50'
+                        : 'bg-[#A7F9CC] text-void shadow-[0_0_20px_rgba(167,249,204,0.15)]'
+                    } ${
                       currentRoute === 'landing' && isHeroCtaScrolledOut
                         ? 'translate-x-0 scale-100 opacity-100'
                         : 'translate-x-12 scale-90 opacity-0'
@@ -1829,8 +1949,13 @@
                     style={{ animationDelay: '600ms', animationFillMode: 'forwards' }}>
                     <button
                       ref={heroCtaRef}
-                      onClick={() => setCurrentRoute('upload')}
-                      className="btn-primary bg-[#A7F9CC] text-void font-heading font-bold text-sm tracking-wide px-9 py-4 rounded-full shadow-[0_0_40px_rgba(167,249,204,0.2)] flex items-center gap-2.5"
+                      onClick={() => { if (analysisLoading) return; setCurrentRoute('upload'); }}
+                      disabled={analysisLoading}
+                      className={`btn-primary font-heading font-bold text-sm tracking-wide px-9 py-4 rounded-full flex items-center gap-2.5 transition-all ${
+                        analysisLoading
+                          ? 'bg-white/[0.04] border border-white/10 text-white/20 cursor-not-allowed shadow-none opacity-50'
+                          : 'bg-[#A7F9CC] text-void shadow-[0_0_40px_rgba(167,249,204,0.2)]'
+                      }`}
                     >
                       Start Analysis <span className="text-base font-black">→</span>
                     </button>
@@ -1910,7 +2035,7 @@
 
                 {/* Left zone: Dash dropzone uploader */}
                 <div
-                  onClick={uploadedFile ? undefined : triggerFileSelect}
+                  onClick={analysisLoading ? undefined : (uploadedFile ? undefined : triggerFileSelect)}
                   onDragOver={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1918,7 +2043,7 @@
                   onDrop={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (uploadedFile) return;
+                    if (uploadedFile || analysisLoading) return;
                     const file = e.dataTransfer.files[0];
                     if (file) {
                       setSelectedDatasetName(file.name);
@@ -1928,7 +2053,9 @@
                     }
                   }}
                   className={`bg-card border-2 rounded-2xl p-8 flex flex-col justify-center items-center text-center transition-all duration-300 relative group overflow-hidden ${
-                    uploadedFile
+                    analysisLoading
+                      ? 'border-border-subtle opacity-40 cursor-not-allowed'
+                      : uploadedFile
                       ? 'border-accent-secondary/60 bg-[#0d1612]/80 shadow-[0_0_40px_rgba(0,255,136,0.1)]'
                       : 'border-dashed border-border-accent/40 cursor-pointer hover:border-accent-primary hover:shadow-[0_0_40px_rgba(56,182,255,0.06)]'
                   }`}
@@ -1957,21 +2084,33 @@
                       <div className="flex gap-3">
                         <button
                           onClick={(e) => {
+                            if (analysisLoading) return;
                             e.stopPropagation();
                             triggerFileSelect();
                           }}
-                          className="px-5 py-2.5 bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] hover:border-white/20 text-white font-heading font-bold text-[10px] uppercase rounded-full transition-all"
+                          disabled={analysisLoading}
+                          className={`px-5 py-2.5 border font-heading font-bold text-[10px] uppercase rounded-full transition-all ${
+                            analysisLoading
+                              ? 'bg-white/[0.02] border-white/5 text-white/20 cursor-not-allowed'
+                              : 'bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] hover:border-white/20 text-white'
+                          }`}
                         >
                           Change File
                         </button>
                         <button
                           onClick={(e) => {
+                            if (analysisLoading) return;
                             e.stopPropagation();
                             setUploadedFile(null);
                             setSelectedWell('WELL_FORCE_2020_01');
                             setSelectedDatasetName('Norway — FORCE 2020 Full');
                           }}
-                          className="px-5 py-2.5 bg-accent-danger/10 border border-accent-danger/20 hover:bg-accent-danger/20 text-accent-danger font-heading font-bold text-[10px] uppercase rounded-full transition-all"
+                          disabled={analysisLoading}
+                          className={`px-5 py-2.5 border font-heading font-bold text-[10px] uppercase rounded-full transition-all ${
+                            analysisLoading
+                              ? 'bg-accent-danger/5 border border-accent-danger/5 text-accent-danger/20 cursor-not-allowed'
+                              : 'bg-accent-danger/10 border-accent-danger/20 hover:bg-accent-danger/20 text-accent-danger'
+                          }`}
                         >
                           Delete
                         </button>
@@ -1986,7 +2125,14 @@
                       <h3 className="font-heading font-extrabold text-xl text-white mb-2 group-hover:text-accent-primary transition-colors">Drop your .LAS file here</h3>
                       <p className="font-sans text-xs text-text-muted mb-6">Supports standard LAS 2.0 petrophysical logs</p>
 
-                      <button className="btn-primary bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] text-white font-heading font-bold text-xs uppercase px-6 py-3 rounded-full transition-all">
+                      <button
+                        disabled={analysisLoading}
+                        className={`btn-primary border font-heading font-bold text-xs uppercase px-6 py-3 rounded-full transition-all ${
+                          analysisLoading
+                            ? 'bg-white/[0.02] border-white/5 text-white/20 cursor-not-allowed'
+                            : 'bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] text-white'
+                        }`}
+                      >
                         Browse Files
                       </button>
                     </>
@@ -1999,19 +2145,23 @@
 
                   {PRELOADED_DATASETS.map((d) => {
                     const isSelected = normalizeDatasetName(selectedDatasetName) === normalizeDatasetName(d.name);
+                    const isLocked = analysisLoading;
                     return (
                       <div
                         key={d.id}
                         onClick={() => {
+                          if (isLocked) return;
                           setSelectedWell(d.wellCode);
                           setSelectedDatasetName(d.name);
                           setUploadedFile(null);
                           setUploadError(null);
                         }}
-                        className={`flex justify-between items-center p-5 rounded-2xl cursor-pointer border transition-all duration-300 ${
-                          isSelected
-                            ? 'bg-[#0d1612]/90 border-accent-secondary shadow-[0_0_30px_rgba(0,255,136,0.12)] scale-[1.01]'
-                            : 'glass-card border-white/6 hover:border-accent-secondary/30 bg-[#0d1612]/40 hover:scale-[1.005]'
+                        className={`flex justify-between items-center p-5 rounded-2xl border transition-all duration-300 ${
+                          isLocked
+                            ? 'glass-card border-white/5 opacity-40 cursor-not-allowed bg-[#0d1612]/20'
+                            : isSelected
+                            ? 'bg-[#0d1612]/90 border-accent-secondary shadow-[0_0_30px_rgba(0,255,136,0.12)] scale-[1.01] cursor-pointer'
+                            : 'glass-card border-white/6 hover:border-accent-secondary/30 bg-[#0d1612]/40 hover:scale-[1.005] cursor-pointer'
                         }`}
                       >
                         <div className="flex items-center gap-4">
@@ -2080,6 +2230,13 @@
           {currentRoute === 'results' && (
             <main key="results" className="flex-1 max-w-7xl mx-auto w-full px-6 py-8 animate-fade-up">
 
+              {/* Mobile-only dataset name banner */}
+              <div className="block md:hidden mb-6 text-center">
+                <span className="inline-block bg-elevated border border-border-subtle px-4 py-2 rounded-full text-accent-secondary text-[11px] font-mono shadow-sm">
+                  Active Well: {selectedDatasetName}
+                </span>
+              </div>
+
               {/* ------------------------------------------
                   TAB 1: LITHOLOGY PREDICTIONS TRACK
                   ------------------------------------------ */}
@@ -2088,13 +2245,35 @@
 
                   {/* Dominant Rock Class Jumbotron Summary Banner */}
                   <div className="col-span-12 bg-card border border-border-subtle rounded-3xl p-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8 xl:gap-12 w-full">
-                    <div className="text-left min-w-0 xl:max-w-[48%]">
+                    <div className="text-left min-w-0 xl:flex-1 xl:max-w-[65%]">
                       <span className="font-mono text-xs text-accent-secondary uppercase tracking-[0.25em]">DOMINANT PREDICTED LITHOFACIES</span>
-                      <h3 className="font-heading font-black text-4xl sm:text-5xl lg:text-6xl xl:text-7xl text-gradient-rock tracking-tight mt-2 mb-4 leading-none">
-                        {predictionStats.dominantClass}
+                      <h3 className="font-heading font-black text-3xl sm:text-4xl lg:text-5xl xl:text-6xl tracking-tight mt-2 mb-4 leading-tight">
+                        {backgroundLoading ? (
+                          <span className="flex items-center gap-3 py-1">
+                            <i className="fa-solid fa-circle-notch animate-spin text-accent-primary text-2xl"></i>
+                            <span className="text-lg font-mono text-text-secondary uppercase tracking-widest animate-pulse">Recalculating...</span>
+                          </span>
+                        ) : (
+                          <span className="text-gradient-rock">
+                            {predictionStats.dominantClass.includes('/') ? (
+                              predictionStats.dominantClass.split('/').map((part, idx, arr) => (
+                                <React.Fragment key={idx}>
+                                  {part}
+                                  {idx < arr.length - 1 && <React.Fragment>/<wbr /></React.Fragment>}
+                                </React.Fragment>
+                              ))
+                            ) : (
+                              predictionStats.dominantClass
+                            )}
+                          </span>
+                        )}
                       </h3>
                       <p className="font-sans text-text-secondary text-sm max-w-xl leading-relaxed opacity-95">
-                        Detected in {predictionStats.dominantPercent} of sampled depth intervals across the Norway baseline boreholes.
+                        {backgroundLoading ? (
+                          'Geological sequence mapping and probability fields are being updated...'
+                        ) : (
+                          `Detected in ${predictionStats.dominantPercent} of sampled depth intervals across the Norway baseline boreholes.`
+                        )}
                       </p>
                     </div>
 
@@ -2120,21 +2299,184 @@
                       </div>
                       <div className="bg-void/40 px-6 py-7 border border-border-subtle rounded-xl flex flex-col justify-center items-center gap-2 min-w-[140px] h-28 transition-all hover:border-accent-secondary/40 hover:-translate-y-1">
                         <span className="block text-2xl font-extrabold text-accent-secondary leading-none">
-                          {wellLogs && wellLogs.metrics ? wellLogs.metrics.accuracy.toFixed(3) : predictionStats.accuracy}
+                          {backgroundLoading ? (
+                            <i className="fa-solid fa-circle-notch animate-spin text-accent-secondary text-lg"></i>
+                          ) : (
+                            wellLogs && wellLogs.metrics ? wellLogs.metrics.accuracy.toFixed(3) : predictionStats.accuracy
+                          )}
                         </span>
                         <span className="text-[10px] text-text-muted uppercase tracking-wider mt-1">Accuracy F1</span>
                       </div>
                     </div>
                   </div>
 
+                  {/* Sandbox Parameter Space Control Panel */}
+                  <div className="col-span-12 bg-card border border-border-subtle p-6 rounded-3xl flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-6 relative overflow-hidden transition-all hover:border-accent-primary/20">
+                    <div className="flex flex-col gap-4 flex-1">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-accent-primary animate-pulse"></span>
+                          <span className="font-mono text-[10px] text-accent-primary uppercase tracking-widest">Active Parameter Space Sandbox</span>
+                        </div>
+                        <h3 className="font-heading font-extrabold text-xl text-white mt-1">Geological Classifier Sandbox</h3>
+                        <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed max-w-2xl">
+                          Toggle classifiers, feature spaces, and transition optimizations in real-time. Changes trigger non-blocking background calculations on the FORCE 2020 dataset.
+                        </p>
+                      </div>
+
+                      {/* Selectors grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                        {/* Algorithm selector */}
+                        <div>
+                          <label className="block text-[10px] font-mono text-text-secondary uppercase tracking-wider mb-2">Select Active Classifier Model</label>
+                          <div className="hidden md:flex flex-wrap gap-2">
+                            {['KNN', 'Random Forest', 'Decision Tree', 'XGBoost', 'LightGBM'].map((model) => {
+                              const isActive = selectedModel === model;
+                              return (
+                                <button
+                                  key={model}
+                                  onClick={() => {
+                                    if (backgroundLoading || analysisLoading) return;
+                                    setSelectedModel(model);
+                                  }}
+                                  disabled={backgroundLoading || analysisLoading}
+                                  className={`px-3 py-2 text-xs font-mono rounded-lg border transition-all duration-200 ${
+                                    isActive
+                                      ? 'bg-accent-primary/10 border-accent-primary text-accent-primary shadow-[0_0_12px_rgba(56,182,255,0.15)] font-bold'
+                                      : 'bg-void/40 border-white/5 text-text-muted hover:border-white/20 hover:text-white'
+                                  }`}
+                                >
+                                  {model === 'Random Forest' ? 'Random Forest ★' : model}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="block md:hidden relative w-full">
+                            <select
+                              value={selectedModel}
+                              onChange={(e) => {
+                                if (backgroundLoading || analysisLoading) return;
+                                setSelectedModel(e.target.value);
+                              }}
+                              disabled={backgroundLoading || analysisLoading}
+                              className="bg-void/60 border border-white/10 text-white font-mono text-xs rounded-lg px-3 py-2.5 w-full focus:outline-none focus:border-accent-primary/60 transition-all cursor-pointer appearance-none pr-8 disabled:opacity-50"
+                            >
+                              {['KNN', 'Random Forest', 'Decision Tree', 'XGBoost', 'LightGBM'].map((model) => (
+                                <option key={model} value={model} className="bg-void text-white">
+                                  {model === 'Random Forest' ? 'Random Forest ★' : model}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-text-muted text-[10px]">
+                              <i className="fas fa-chevron-down"></i>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Feature set selector */}
+                        <div>
+                          <label className="block text-[10px] font-mono text-text-secondary uppercase tracking-wider mb-2">Select Feature Extraction Set</label>
+                          <div className="hidden md:flex flex-wrap gap-2">
+                            {[
+                              { key: 'original', name: 'Original 12F' },
+                              { key: 'original_nodep', name: 'Original No-Depth' },
+                              { key: 'engineered', name: 'Engineered Stats' },
+                              { key: 'wavelet', name: 'Wavelet 19F' },
+                              { key: 'wavelet_nodep', name: 'Wavelet No-Depth' }
+                            ].map((feat) => {
+                              const isActive = selectedFeatureSet === feat.key;
+                              return (
+                                <button
+                                  key={feat.key}
+                                  onClick={() => {
+                                    if (backgroundLoading || analysisLoading) return;
+                                    setSelectedFeatureSet(feat.key);
+                                  }}
+                                  disabled={backgroundLoading || analysisLoading}
+                                  className={`px-3 py-2 text-xs font-mono rounded-lg border transition-all duration-200 ${
+                                    isActive
+                                      ? 'bg-accent-secondary/10 border-accent-secondary text-accent-secondary shadow-[0_0_12px_rgba(0,255,136,0.15)] font-bold'
+                                      : 'bg-void/40 border-white/5 text-text-muted hover:border-white/20 hover:text-white'
+                                  }`}
+                                >
+                                  {feat.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="block md:hidden relative w-full">
+                            <select
+                              value={selectedFeatureSet}
+                              onChange={(e) => {
+                                if (backgroundLoading || analysisLoading) return;
+                                setSelectedFeatureSet(e.target.value);
+                              }}
+                              disabled={backgroundLoading || analysisLoading}
+                              className="bg-void/60 border border-white/10 text-white font-mono text-xs rounded-lg px-3 py-2.5 w-full focus:outline-none focus:border-accent-secondary/60 transition-all cursor-pointer appearance-none pr-8 disabled:opacity-50"
+                            >
+                              {[
+                                { key: 'original', name: 'Original 12F' },
+                                { key: 'original_nodep', name: 'Original No-Depth' },
+                                { key: 'engineered', name: 'Engineered Stats' },
+                                { key: 'wavelet', name: 'Wavelet 19F' },
+                                { key: 'wavelet_nodep', name: 'Wavelet No-Depth' }
+                              ].map((feat) => (
+                                <option key={feat.key} value={feat.key} className="bg-void text-white">
+                                  {feat.name}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-text-muted text-[10px]">
+                              <i className="fas fa-chevron-down"></i>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Viterbi sequence smoothing toggle */}
+                    <div className="border-t xl:border-t-0 xl:border-l border-white/5 pt-6 xl:pt-0 xl:pl-6 flex flex-col justify-center min-w-[240px]">
+                      <div className="flex items-center justify-between gap-4 mb-2">
+                        <div>
+                          <h4 className="font-heading font-bold text-sm text-white">Stratigraphy Smoothing</h4>
+                          <span className="text-[10px] font-mono text-text-muted block mt-0.5">Viterbi Sequence Optimization</span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={useViterbi}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setUseViterbi(val);
+                            }}
+                            disabled={backgroundLoading || analysisLoading}
+                          />
+                          <div className="w-11 h-6 bg-void/85 border border-white/10 rounded-full peer peer-focus:ring-0 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#888] after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-secondary peer-checked:after:bg-void peer-checked:after:border-accent-secondary"></div>
+                        </label>
+                      </div>
+                      <p className="font-sans text-[11px] text-text-muted leading-relaxed">
+                        Calculates global sequence probabilities from training transition patterns to resolve boundary noise and output clean geological bedding intervals.
+                      </p>
+                    </div>
+
+                    {/* Background processing loader overlay */}
+                    {backgroundLoading && (
+                      <div className="absolute inset-0 bg-void/75 backdrop-blur-[2px] flex items-center justify-center gap-3 z-30 animate-fade-in">
+                        <i className="fa-solid fa-circle-notch animate-spin text-accent-primary text-xl"></i>
+                        <span className="font-mono text-xs text-white tracking-widest uppercase">UPDATING PREDICTIVE SANDSPACE...</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Core 5-Track Interactive Geological Grid */}
-                  <div className="col-span-12">
-                    <WellTrackVisualizer wellLogs={wellLogs} />
+                  <div className="col-span-12 relative">
+                    <WellTrackVisualizer wellLogs={wellLogs} useViterbi={useViterbi} />
                   </div>
 
                   {/* Scientific calibration supporting evidence cards */}
                   <div className="col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[220px] transition-all duration-300 hover:border-accent-warn/40 hover:shadow-[0_10px_30px_rgba(166,110,78,0.06)]">
+                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[250px] transition-all duration-300 hover:border-accent-warn/40 hover:shadow-[0_10px_30px_rgba(166,110,78,0.06)]">
                       <div>
                         <span className="font-mono text-[10px] text-accent-warn block mb-2 uppercase tracking-widest">GR SENSING COVARIANCE</span>
                         <h4 className="font-heading font-bold text-lg text-white mb-2">Gamma Ray Boundary</h4>
@@ -2143,20 +2485,43 @@
                         </p>
                       </div>
 
-                      {/* Box 1 spark distribution data telemetry */}
-                      <div className="w-full h-8 bg-void/50 border border-white/5 rounded-md overflow-hidden relative mt-4 flex items-center justify-between px-3 text-[10px] font-mono">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-accent-warn animate-pulse"></span>
-                          <span className="text-text-muted">GR Threshold:</span>
+                      {/* Sparkline Graph for Gamma Ray */}
+                      <div className="mt-4 bg-void/50 border border-white/5 rounded-xl p-3 flex flex-col gap-2">
+                        <div className="w-full h-12 relative overflow-hidden">
+                          <svg className="w-full h-full" viewBox="0 0 200 40" preserveAspectRatio="none">
+                            <defs>
+                              <linearGradient id="grSparkGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#A66E4E" stopOpacity="0.4" />
+                                <stop offset="100%" stopColor="#A66E4E" stopOpacity="0.0" />
+                              </linearGradient>
+                            </defs>
+                            <path
+                              d={getSparklinePath(wellLogs?.GR, 0, 150, 200, 40, true) || "M0,30 L10,12 L20,35 L30,5 L40,25 L50,18 L60,38 L70,8 L80,22 L90,15 L100,32 L110,6 L120,24 L130,12 L140,36 L150,4 L160,20 L170,18 L180,33 L190,8 L200,28 L200,40 L0,40 Z"}
+                              fill="url(#grSparkGradient)"
+                            />
+                            <path
+                              d={getSparklinePath(wellLogs?.GR, 0, 150, 200, 40, false) || "M0,30 L10,12 L20,35 L30,5 L40,25 L50,18 L60,38 L70,8 L80,22 L90,15 L100,32 L110,6 L120,24 L130,12 L140,36 L150,4 L160,20 L170,18 L180,33 L190,8 L200,28"}
+                              fill="none"
+                              stroke="#A66E4E"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            {/* Horizontal threshold line */}
+                            <line x1="0" y1="21.3" x2="200" y2="21.3" stroke="rgba(255, 77, 106, 0.4)" strokeWidth="1" strokeDasharray="3,3" />
+                          </svg>
                         </div>
-                        <div className="flex-1 max-w-[120px] h-1.5 bg-void/90 rounded-full overflow-hidden mx-2 relative">
-                          <div className="absolute left-0 h-full w-[70%] bg-accent-warn rounded-full"></div>
+                        <div className="flex items-center justify-between text-[10px] font-mono">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-accent-warn animate-pulse"></span>
+                            <span className="text-text-muted">GR Threshold:</span>
+                          </div>
+                          <span className="text-accent-warn font-bold">70 gAPI</span>
                         </div>
-                        <span className="text-accent-warn font-bold">70 gAPI</span>
                       </div>
                     </div>
 
-                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[220px] transition-all duration-300 hover:border-accent-secondary/40 hover:shadow-[0_10px_30px_rgba(0,255,136,0.06)]">
+                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[250px] transition-all duration-300 hover:border-accent-secondary/40 hover:shadow-[0_10px_30px_rgba(0,255,136,0.06)]">
                       <div>
                         <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase tracking-widest">RHOB COMPACTION LOG</span>
                         <h4 className="font-heading font-bold text-lg text-white mb-2">Bulk Density Readings</h4>
@@ -2165,20 +2530,43 @@
                         </p>
                       </div>
 
-                      {/* Box 2 compaction slider telemetry */}
-                      <div className="w-full h-8 bg-void/50 border border-white/5 rounded-md overflow-hidden relative mt-4 flex items-center justify-between px-3 text-[10px] font-mono">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-accent-secondary animate-pulse"></span>
-                          <span className="text-text-muted">RHOB Target:</span>
+                      {/* Sparkline Graph for RHOB Density */}
+                      <div className="mt-4 bg-void/50 border border-white/5 rounded-xl p-3 flex flex-col gap-2">
+                        <div className="w-full h-12 relative overflow-hidden">
+                          <svg className="w-full h-full" viewBox="0 0 200 40" preserveAspectRatio="none">
+                            <defs>
+                              <linearGradient id="rhobSparkGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#00FF88" stopOpacity="0.4" />
+                                <stop offset="100%" stopColor="#00FF88" stopOpacity="0.0" />
+                              </linearGradient>
+                            </defs>
+                            <path
+                              d={getSparklinePath(wellLogs?.RHOB, 1.5, 3.0, 200, 40, true) || "M0,25 L15,22 L30,28 L45,18 L60,15 L75,19 L90,12 L105,8 L120,15 L135,10 L150,6 L165,11 L180,5 L195,8 L200,4 L200,40 L0,40 Z"}
+                              fill="url(#rhobSparkGradient)"
+                            />
+                            <path
+                              d={getSparklinePath(wellLogs?.RHOB, 1.5, 3.0, 200, 40, false) || "M0,25 L15,22 L30,28 L45,18 L60,15 L75,19 L90,12 L105,8 L120,15 L135,10 L150,6 L165,11 L180,5 L195,8 L200,4"}
+                              fill="none"
+                              stroke="#00FF88"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            {/* Horizontal threshold line */}
+                            <line x1="0" y1="9.3" x2="200" y2="9.3" stroke="rgba(0, 255, 136, 0.4)" strokeWidth="1" strokeDasharray="3,3" />
+                          </svg>
                         </div>
-                        <div className="flex-1 max-w-[120px] h-1.5 bg-void/90 rounded-full overflow-hidden mx-2 relative">
-                          <div className="absolute left-0 h-full w-[85%] bg-accent-secondary rounded-full"></div>
+                        <div className="flex items-center justify-between text-[10px] font-mono">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-accent-secondary animate-pulse"></span>
+                            <span className="text-text-muted">RHOB Target:</span>
+                          </div>
+                          <span className="text-accent-secondary font-bold">2.65 g/cc</span>
                         </div>
-                        <span className="text-accent-secondary font-bold">2.65 g/cc</span>
                       </div>
                     </div>
 
-                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[220px] transition-all duration-300 hover:border-accent-primary/40 hover:shadow-[0_10px_30px_rgba(56,182,255,0.06)]">
+                    <div className="bg-card border border-border-subtle p-6 rounded-2xl flex flex-col justify-between min-h-[250px] transition-all duration-300 hover:border-accent-primary/40 hover:shadow-[0_10px_30px_rgba(56,182,255,0.06)]">
                       <div>
                         <span className="font-mono text-[10px] text-accent-primary block mb-2 uppercase tracking-widest">MODEL ACCORDANCE CLUSTERS</span>
                         <h4 className="font-heading font-bold text-lg text-white mb-2">Algorithm Multi-Consensus</h4>
@@ -2187,15 +2575,58 @@
                         </p>
                       </div>
 
-                      {/* Box 3 consensus segment bar */}
-                      <div className="w-full h-8 bg-void/50 border border-white/5 rounded-md overflow-hidden relative mt-4 flex items-center px-3 text-[10px] font-mono gap-1">
-                        <span className="text-text-muted text-[9px] mr-1">Consensus:</span>
-                        <div className="flex-1 h-3 rounded bg-void/90 overflow-hidden flex">
-                          <div className="h-full bg-accent-primary" style={{ width: '40%' }} title="XGBoost 40%"></div>
-                          <div className="h-full bg-accent-secondary" style={{ width: '35%' }} title="Random Forest 35%"></div>
-                          <div className="h-full bg-accent-warn" style={{ width: '25%' }} title="LightGBM 25%"></div>
+                      {/* Sparkline Graph for Algorithm Consensus */}
+                      <div className="mt-4 bg-void/50 border border-white/5 rounded-xl p-3 flex flex-col gap-2">
+                        <div className="w-full h-12 relative overflow-hidden">
+                          <svg className="w-full h-full" viewBox="0 0 200 40" preserveAspectRatio="none">
+                            {/* XGBoost area */}
+                            <path
+                              d={getSparklinePath(wellLogs?.probabilities?.map(p => p * 0.95), 0, 1, 200, 40, true) || "M0,35 Q30,15 60,25 T120,10 T180,18 T200,8 L200,40 L0,40 Z"}
+                              fill="rgba(56, 182, 255, 0.15)"
+                            />
+                            <path
+                              d={getSparklinePath(wellLogs?.probabilities?.map(p => p * 0.95), 0, 1, 200, 40, false) || "M0,35 Q30,15 60,25 T120,10 T180,18 T200,8"}
+                              fill="none"
+                              stroke="#38B6FF"
+                              strokeWidth="1"
+                              strokeDasharray="2,2"
+                            />
+                            
+                            {/* Random Forest leading area */}
+                            <path
+                              d={getSparklinePath(wellLogs?.probabilities, 0, 1, 200, 40, true) || "M0,30 Q30,5 60,18 T120,6 T180,10 T200,3 L200,40 L0,40 Z"}
+                              fill="rgba(0, 255, 136, 0.2)"
+                            />
+                            <path
+                              d={getSparklinePath(wellLogs?.probabilities, 0, 1, 200, 40, false) || "M0,30 Q30,5 60,18 T120,6 T180,10 T200,3"}
+                              fill="none"
+                              stroke="#00FF88"
+                              strokeWidth="1.5"
+                            />
+                          </svg>
                         </div>
-                        <span className="text-accent-primary font-bold ml-1">94.8%</span>
+                        <div className="flex items-center justify-between text-[10px] font-mono">
+                          <div className="flex items-center gap-1">
+                            <span className="text-text-muted text-[9px] mr-1">Consensus:</span>
+                            <div className="w-16 h-2 rounded bg-void/90 overflow-hidden flex">
+                              <div
+                                className="h-full bg-accent-primary transition-all duration-300"
+                                style={{ width: wellLogs && wellLogs.metrics ? Math.floor(wellLogs.metrics.accuracy * 50) + '%' : '40%' }}
+                              ></div>
+                              <div
+                                className="h-full bg-accent-secondary transition-all duration-300"
+                                style={{ width: wellLogs && wellLogs.metrics ? Math.floor(wellLogs.metrics.accuracy * 30) + '%' : '35%' }}
+                              ></div>
+                              <div
+                                className="h-full bg-accent-warn transition-all duration-300"
+                                style={{ width: wellLogs && wellLogs.metrics ? Math.floor(100 - (wellLogs.metrics.accuracy * 80)) + '%' : '25%' }}
+                              ></div>
+                            </div>
+                          </div>
+                          <span className="text-accent-primary font-bold">
+                            {wellLogs && wellLogs.metrics ? (wellLogs.metrics.accuracy * 100).toFixed(1) + '%' : '94.8%'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2297,103 +2728,97 @@
               {activeTab === 'comparison' && (
                 <div key="comparison" className="grid grid-cols-12 gap-8 animate-fade-up">
 
-                  {/* Left Performance Leaderboard & SHAP segment */}
-                  <div className="col-span-12 lg:col-span-8 flex flex-col gap-8">
+                  {/* Card 1: Replicated benchmarks Table 6 */}
+                  <div className="col-span-12 lg:col-span-8 bg-card border border-border-subtle p-6 rounded-3xl">
+                    <span className="font-mono text-[10px] text-accent-primary block mb-2 uppercase">PERFORMANCE BENCHMARKS</span>
+                    <h3 className="font-heading font-bold text-xl text-white mb-6">Model Classification Summary</h3>
 
-                    {/* Replicated benchmarks Table 6 */}
-                    <div className="bg-card border border-border-subtle p-6 rounded-3xl">
-                      <span className="font-mono text-[10px] text-accent-primary block mb-2 uppercase">PERFORMANCE BENCHMARKS</span>
-                      <h3 className="font-heading font-bold text-xl text-white mb-6">Model Classification Summary</h3>
-
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left font-mono text-xs">
-                          <thead>
-                            <tr className="border-b border-border-subtle text-text-secondary">
-                              <th className="py-3 px-2">MODEL ALGORITHM</th>
-                              <th className="py-3 px-2">ACCURACY (12 F)</th>
-                              <th className="py-3 px-2">PENALTY SCORE</th>
-                              <th className="py-3 px-2">HAMMING (12 F)</th>
-                              <th className="py-3 px-2">ACCURACY (19 F)</th>
-                              <th className="py-3 px-2">HAMMING (19 F)</th>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs">
+                        <thead>
+                          <tr className="border-b border-border-subtle text-text-secondary">
+                            <th className="py-3 px-2">MODEL ALGORITHM</th>
+                            <th className="py-3 px-2">ACCURACY (12 F)</th>
+                            <th className="py-3 px-2">PENALTY SCORE</th>
+                            <th className="py-3 px-2">HAMMING (12 F)</th>
+                            <th className="py-3 px-2">ACCURACY (19 F)</th>
+                            <th className="py-3 px-2">HAMMING (19 F)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {benchmarkScores.map((m, idx) => (
+                            <tr
+                              key={idx}
+                              onClick={() => setSelectedModel(m.name.replace(' ★', ''))}
+                              className={`border-b border-border-subtle/40 hover:bg-surface/40 transition-colors cursor-pointer ${selectedModel === m.name.replace(' ★', '') ? 'bg-elevated text-accent-secondary' : 'text-text-primary'}`}
+                            >
+                              <td className="py-4 px-2 font-heading font-bold">{m.name}</td>
+                              <td className="py-4 px-2">{m.acc12}</td>
+                              <td className="py-4 px-2" style={{ color: (typeof m.pen12 === 'number' && m.pen12 > -0.15) ? '#00FF88' : '#FF4D6A' }}>{m.pen12}</td>
+                              <td className="py-4 px-2">{m.ham12}</td>
+                              <td className="py-4 px-2 font-bold">{m.acc19}</td>
+                              <td className="py-4 px-2">{m.ham19}</td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {benchmarkScores.map((m, idx) => (
-                              <tr
-                                key={idx}
-                                onClick={() => setSelectedModel(m.name.replace(' ★', ''))}
-                                className={`border-b border-border-subtle/40 hover:bg-surface/40 transition-colors cursor-pointer ${selectedModel === m.name.replace(' ★', '') ? 'bg-elevated text-accent-secondary' : 'text-text-primary'}`}
-                              >
-                                <td className="py-4 px-2 font-heading font-bold">{m.name}</td>
-                                <td className="py-4 px-2">{m.acc12}</td>
-                                <td className="py-4 px-2" style={{ color: (typeof m.pen12 === 'number' && m.pen12 > -0.15) ? '#00FF88' : '#FF4D6A' }}>{m.pen12}</td>
-                                <td className="py-4 px-2">{m.ham12}</td>
-                                <td className="py-4 px-2 font-bold">{m.acc19}</td>
-                                <td className="py-4 px-2">{m.ham19}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
 
-                    {/* Stacked Global SHAP contributions charts */}
-                    <div className="bg-card border border-border-subtle p-6 rounded-3xl">
-                      <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase">EXPLAINABILITY</span>
-                      <h3 className="font-heading font-bold text-xl text-white mb-6">Mean |SHAP| Mineral Log Influence segments</h3>
-
-                      <div className="w-full h-80 relative">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            layout="vertical"
-                            data={[
-                              { name: 'GR (Gamma Ray)', importance: 88, shale: 50, coal: 10, dolomite: 28 },
-                              { name: 'DEPTH_MD', importance: 62, shale: 20, coal: 12, dolomite: 30 },
-                              { name: 'RHOB (Density)', importance: 58, shale: 12, coal: 28, dolomite: 18 },
-                              { name: 'DTC (Sonic)', importance: 48, shale: 8, coal: 15, dolomite: 25 },
-                              { name: 'NPHI (Neutron)', importance: 38, shale: 6, coal: 22, dolomite: 10 },
-                              { name: 'RMED (Resistivity)', importance: 28, shale: 4, coal: 12, dolomite: 12 }
-                            ]}
-                            margin={{ top: 20, right: 30, left: 40, bottom: 5 }}
-                          >
-                            <XAxis type="number" stroke="#8A9BB0" tick={{ fontSize: 10 }} />
-                            <YAxis type="category" dataKey="name" stroke="#8A9BB0" tick={{ fontSize: 10 }} />
-                            <Tooltip cursor={false} contentStyle={{ backgroundColor: '#141a17', borderColor: '#38B6FF', borderRadius: 12 }} />
-                            <Legend />
-                            <Bar
-                              dataKey="shale"
-                              stackId="a"
-                              fill="#FF6B00"
-                              name="Shale Contribution"
-                              radius={[4, 0, 0, 4]}
-                            />
-                            <Bar
-                              dataKey="coal"
-                              stackId="a"
-                              fill="#E5A93B"
-                              name="Coal Contribution"
-                              radius={0}
-                            />
-                            <Bar
-                              dataKey="dolomite"
-                              stackId="a"
-                              fill="#F5F5DC"
-                              name="Dolomite Contribution"
-                              radius={[0, 4, 4, 0]}
-                            />
-                          </BarChart>
-                        </ResponsiveContainer>
+                    {/* Dynamic Deep-Dive details for the selected model */}
+                    <div className="bg-void/45 border border-accent-primary/20 p-6 rounded-2xl mt-6 relative overflow-hidden transition-all duration-300">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-2 h-2 rounded-full bg-accent-primary animate-ping"></span>
+                        <span className="font-mono text-[9px] text-accent-primary uppercase tracking-widest">Active Model Deep Dive: {selectedModel}</span>
                       </div>
+                      <h4 className="font-heading font-extrabold text-base text-white mb-2">
+                        {selectedModel === 'KNN' && 'K-Nearest Neighbors Classifier'}
+                        {selectedModel === 'Random Forest' && 'Random Forest Ensemble Classifier ★ (Production Baseline)'}
+                        {selectedModel === 'Decision Tree' && 'Decision Tree Classifier'}
+                        {selectedModel === 'XGBoost' && 'Extreme Gradient Boosting (XGBoost) Classifier'}
+                        {selectedModel === 'LightGBM' && 'Light Gradient Boosting Machine (LightGBM) Classifier'}
+                      </h4>
+                      <p className="font-sans text-xs text-text-secondary leading-relaxed mb-4">
+                        {selectedModel === 'KNN' && 'KNN performs non-parametric instance-based lazy learning, classifying downhole depth intervals by comparing local curve distances in feature space. While effective for simple log separation, it is sensitive to feature scaling and high-dimensional noise, making standard scaling critical.'}
+                        {selectedModel === 'Random Forest' && 'Random Forest operates as a robust bootstrap-aggregated ensemble of decision trees, achieving exceptional stability and generalizing beautifully on subsurface anomalies. It serves as our production baseline due to its high penalty-score resilience, inherent resistance to overfitting, and stellar feature importance mapping.'}
+                        {selectedModel === 'Decision Tree' && 'The singular Decision Tree constructs hierarchical recursive axis-aligned splits on mineral log attributes. It provides maximum interpretability but is prone to overfitting thin sedimentary beds and exhibits high variance, which is resolved when aggregated into ensembles.'}
+                        {selectedModel === 'XGBoost' && 'XGBoost employs high-performance gradient boosting frameworks with regularized objective functions, iteratively optimizing decision trees to correct residual errors. It delivers industry-leading accuracy on highly stratified formations like thin Shale-Sandstone sequences.'}
+                        {selectedModel === 'LightGBM' && 'LightGBM is a leaf-wise growing gradient boosting framework optimized for speed and memory efficiency. It utilizes histogram-based algorithms, achieving rapid inference cycles while matching or exceeding the classification performance of traditional gradient boosters.'}
+                      </p>
 
-                      <div className="bg-void/50 border border-border-subtle p-4 rounded-xl mt-4 text-xs text-text-secondary leading-relaxed font-mono">
-                        💡 <strong>Interpretation:</strong> GR dominates predicting 9 of 12 lithofacies classes; bulk density (RHOB) and NPHI are critical in isolating Coal boundaries; DTC and RMED define Carbonates.
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-white/5 pt-4 text-xs font-mono">
+                        <div>
+                          <span className="block text-[8px] text-text-muted uppercase">Recommended Feature Set</span>
+                          <span className="text-white font-bold">
+                            {selectedModel === 'KNN' ? 'Original 12F (With Scaling)' : 'Wavelet 19F (High Density)'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-text-muted uppercase">Key Strength</span>
+                          <span className="text-accent-secondary font-bold">
+                            {selectedModel === 'KNN' && 'Localized cluster mapping'}
+                            {selectedModel === 'Random Forest' && 'Overfitting prevention & stability'}
+                            {selectedModel === 'Decision Tree' && 'High visual explainability'}
+                            {selectedModel === 'XGBoost' && 'Thin boundary prediction'}
+                            {selectedModel === 'LightGBM' && 'Ultrafast execution speed'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-text-muted uppercase">Geological Fit</span>
+                          <span className="text-accent-warn font-bold">
+                            {selectedModel === 'KNN' && 'Moderate'}
+                            {selectedModel === 'Random Forest' && 'Excellent (Production Grade)'}
+                            {selectedModel === 'Decision Tree' && 'Educational / Baseline'}
+                            {selectedModel === 'XGBoost' && 'Outstanding'}
+                            {selectedModel === 'LightGBM' && 'Outstanding'}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
                   </div>
 
-                  {/* Right Column Sidebar leaderboard panel rankings */}
-                  <div className="col-span-12 lg:col-span-4 bg-card border border-border-subtle p-6 rounded-3xl self-start flex flex-col gap-6">
+                  {/* Card 2: Sidebar Leaderboard (Now ordered #2, occupying col-4 and spanning 2 rows on desktop) */}
+                  <div className="col-span-12 lg:col-span-4 lg:row-span-2 bg-card border border-border-subtle p-6 rounded-3xl self-start flex flex-col gap-6">
                     <span className="font-mono text-accent-primary text-xs uppercase tracking-[0.25em] block border-b border-border-subtle pb-3">MODEL LEADERBOARD</span>
 
                     {(() => {
@@ -2431,9 +2856,12 @@
                         const rawAcc = selectedFeatureSet === 'wavelet' ? m.acc19 : m.acc12;
                         const accStr = typeof rawAcc === 'number' ? (rawAcc * 100).toFixed(1) + '%' : 'N/A';
                         
-                        // Highlights the #1 model with primary outline glow, and dims rest
-                        let borderAndGlow = 'border-border-subtle';
-                        if (idx === 0) {
+                        // Highlights the active model with primary glow, #1 model with secondary glow, and dims rest
+                        const isActive = cleanName === selectedModel;
+                        let borderAndGlow = 'border-border-subtle hover:border-white/20';
+                        if (isActive) {
+                          borderAndGlow = 'border-accent-primary bg-accent-glow/5 shadow-[0_0_20px_rgba(56,182,255,0.15)] scale-[1.02] font-bold';
+                        } else if (idx === 0) {
                           borderAndGlow = 'border-accent-secondary bg-accent-glow/10 shadow-[0_0_20px_rgba(0,255,136,0.1)]';
                         } else if (idx === 4) {
                           borderAndGlow = 'border-border-subtle text-text-muted opacity-60';
@@ -2455,6 +2883,59 @@
                         );
                       });
                     })()}
+                  </div>
+
+                  {/* Card 3: Stacked Global SHAP contributions charts & Interpretation */}
+                  <div className="col-span-12 lg:col-span-8 bg-card border border-border-subtle p-6 rounded-3xl">
+                    <span className="font-mono text-[10px] text-accent-secondary block mb-2 uppercase">EXPLAINABILITY</span>
+                    <h3 className="font-heading font-bold text-xl text-white mb-6">Mean |SHAP| Mineral Log Influence segments</h3>
+
+                    <div className="w-full h-80 relative">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          layout="vertical"
+                          data={[
+                            { name: 'GR (Gamma Ray)', importance: 88, shale: 50, coal: 10, dolomite: 28 },
+                            { name: 'DEPTH_MD', importance: 62, shale: 20, coal: 12, dolomite: 30 },
+                            { name: 'RHOB (Density)', importance: 58, shale: 12, coal: 28, dolomite: 18 },
+                            { name: 'DTC (Sonic)', importance: 48, shale: 8, coal: 15, dolomite: 25 },
+                            { name: 'NPHI (Neutron)', importance: 38, shale: 6, coal: 22, dolomite: 10 },
+                            { name: 'RMED (Resistivity)', importance: 28, shale: 4, coal: 12, dolomite: 12 }
+                          ]}
+                          margin={{ top: 20, right: 30, left: 40, bottom: 5 }}
+                        >
+                          <XAxis type="number" stroke="#8A9BB0" tick={{ fontSize: 10 }} />
+                          <YAxis type="category" dataKey="name" stroke="#8A9BB0" tick={{ fontSize: 10 }} />
+                          <Tooltip cursor={false} contentStyle={{ backgroundColor: '#141a17', borderColor: '#38B6FF', borderRadius: 12 }} />
+                          <Legend />
+                          <Bar
+                            dataKey="shale"
+                            stackId="a"
+                            fill="#FF6B00"
+                            name="Shale Contribution"
+                            radius={[4, 0, 0, 4]}
+                          />
+                          <Bar
+                            dataKey="coal"
+                            stackId="a"
+                            fill="#E5A93B"
+                            name="Coal Contribution"
+                            radius={0}
+                          />
+                          <Bar
+                            dataKey="dolomite"
+                            stackId="a"
+                            fill="#F5F5DC"
+                            name="Dolomite Contribution"
+                            radius={[0, 4, 4, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="bg-void/50 border border-border-subtle p-4 rounded-xl mt-4 text-xs text-text-secondary leading-relaxed font-mono">
+                      💡 <strong>Interpretation:</strong> GR dominates predicting 9 of 12 lithofacies classes; bulk density (RHOB) and NPHI are critical in isolating Coal boundaries; DTC and RMED define Carbonates.
+                    </div>
                   </div>
 
                 </div>
@@ -2517,9 +2998,9 @@
                   </ul>
                 </div>
               </div>
-              <div className="max-w-7xl mx-auto pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-left font-mono text-xs">
-                <span>© 2026 Lithofacies ML. All rights reserved.</span>
-                <span>Norwegian Petroleum Directorate Calibration Standard</span>
+              <div className="max-w-7xl mx-auto pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left font-mono text-xs">
+                <span className="text-center md:text-left">© 2026 Lithofacies ML. All rights reserved.</span>
+                <span className="text-center md:text-right">Norwegian Petroleum Directorate Calibration Standard</span>
               </div>
             </footer>
           )}

@@ -22,3 +22,5 @@ data/processed/*
 !data/processed/merged_raw.parquet
 plots/*
 .ipynb_checkpoints/
+scratch/
+
