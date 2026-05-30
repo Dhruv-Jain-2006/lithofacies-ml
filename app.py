@@ -720,6 +720,14 @@ def upload_las_file():
         las = lasio.read(temp_path)
         df = las.df().reset_index()
         
+        # Cloud protection downsampling: Limit uploaded well to at most 1,500 depth samples 
+        # to guarantee execution completes in < 3 seconds, avoiding Render proxy timeouts (502)
+        # and Gunicorn OOM worker terminations.
+        if len(df) > 1500:
+            step = int(np.ceil(len(df) / 1500))
+            logger.info(f"Uploaded well has {len(df)} rows. Downsampling by factor of {step} for cloud performance...")
+            df = df.iloc[::step].copy()
+        
         # Standardize columns to uppercase first
         df.columns = [col.upper().strip() for col in df.columns]
         
