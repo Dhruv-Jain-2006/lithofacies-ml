@@ -458,32 +458,33 @@ def get_well_model_comparison(well_id):
         medians19 = df_processed[WAVELET_COLS].median()
         X_raw19_all = X_raw19_all.fillna(medians19)
         
-        models_orig_local = get_models_for_config('original')
-        models_wav_local = get_models_for_config('wavelet')
-
         for name in model_names:
             try:
                 # 12F Original metrics
                 acc12, pen12, ham12 = 0.0, 0.0, 0.0
-                if name in models_orig_local:
-                    model12 = models_orig_local[name]
+                model12 = load_single_model('original', name)
+                if model12 is not None:
                     X_in12 = scaler_orig.transform(X_raw12_all) if name == 'KNN' else X_raw12_all.values
                     y_pred12 = model12.predict(X_in12).astype(int)[valid_mask]
                     m12 = get_classification_metrics(y_true_valid, y_pred12, penalty_matrix)
                     acc12 = float(m12["Accuracy"])
                     pen12 = float(m12["PenaltyScore"])
                     ham12 = float(m12["HammingLoss"])
+                    del model12
+                    gc.collect()
                     
                 # 19F Wavelet metrics
                 acc19, pen19, ham19 = 0.0, 0.0, 0.0
-                if name in models_wav_local:
-                    model19 = models_wav_local[name]
+                model19 = load_single_model('wavelet', name)
+                if model19 is not None:
                     X_in19 = scaler_wav.transform(X_raw19_all) if name == 'KNN' else X_raw19_all.values
                     y_pred19 = model19.predict(X_in19).astype(int)[valid_mask]
                     m19 = get_classification_metrics(y_true_valid, y_pred19, penalty_matrix)
                     acc19 = float(m19["Accuracy"])
                     pen19 = float(m19["PenaltyScore"])
                     ham19 = float(m19["HammingLoss"])
+                    del model19
+                    gc.collect()
             except Exception as model_err:
                 logger.error(f"Error predicting model {name}: {str(model_err)}")
                 import traceback
@@ -691,15 +692,12 @@ def run_sandbox_prediction():
         if not model_name or not feature_vals:
             return jsonify({"error": "Missing model_name or features parameter"}), 400
             
-        # Select active models dictionary (always original 12 features for manual sliders - lazy loaded)
-        models = get_models_for_config('original')
         cols = ORIGINAL_COLS
         scaler = scaler_orig
         
-        if model_name not in models:
+        model = load_single_model('original', model_name)
+        if model is None:
             return jsonify({"error": f"Model {model_name} not loaded for original feature set"}), 400
-            
-        model = models[model_name]
         
         # Build 1D raw vector matching columns exactly
         raw_vector = []
@@ -826,9 +824,9 @@ def process_upload_background(task_id, temp_path, filename, model_name, feature_
         if has_gt:
             y_true = df_features['LITHOLOGY'].fillna(-1).values.astype(int)
             
-        # Select active parameters for inference
-        cols = ORIGINAL_COLS if feature_set == 'original' else WAVELET_COLS
-        scaler = scaler_orig if feature_set == 'original' else scaler_wav
+        # Select active parameters dynamically from features and scalers dictionaries
+        cols = features_dict.get(feature_set, features_dict.get('original', ORIGINAL_COLS))
+        scaler = scalers_dict.get(feature_set, scalers_dict.get('original'))
         
         # Micro-load ONLY the requested single model to prevent OOM memory exhaustion!
         model = load_single_model(feature_set, model_name)
@@ -836,7 +834,10 @@ def process_upload_background(task_id, temp_path, filename, model_name, feature_
             # Fallback
             model = load_single_model(feature_set, 'Random Forest')
         
-        X_raw = df_features[cols]
+        X_raw = df_features[cols].copy()
+        medians = df_processed[cols].median()
+        X_raw = X_raw.fillna(medians)
+        
         if model_name == 'KNN':
             X_input = scaler.transform(X_raw)
         else:
@@ -915,7 +916,9 @@ def process_upload_background(task_id, temp_path, filename, model_name, feature_
                     try:
                         model12 = load_single_model('original', name)
                         if model12 is not None:
-                            X_raw12 = df_features_metrics[ORIGINAL_COLS]
+                            X_raw12 = df_features_metrics[ORIGINAL_COLS].copy()
+                            medians12 = df_processed[ORIGINAL_COLS].median()
+                            X_raw12 = X_raw12.fillna(medians12)
                             X_in12 = scaler_orig.transform(X_raw12) if name == 'KNN' else X_raw12.values
                             y_pred12 = model12.predict(X_in12).astype(int)[valid_mask_metrics]
                             m12 = get_classification_metrics(y_true_valid_metrics, y_pred12, penalty_matrix)
@@ -932,7 +935,9 @@ def process_upload_background(task_id, temp_path, filename, model_name, feature_
                     try:
                         model19 = load_single_model('wavelet', name)
                         if model19 is not None:
-                            X_raw19 = df_features_metrics[WAVELET_COLS]
+                            X_raw19 = df_features_metrics[WAVELET_COLS].copy()
+                            medians19 = df_processed[WAVELET_COLS].median()
+                            X_raw19 = X_raw19.fillna(medians19)
                             X_in19 = scaler_wav.transform(X_raw19) if name == 'KNN' else X_raw19.values
                             y_pred19 = model19.predict(X_in19).astype(int)[valid_mask_metrics]
                             m19 = get_classification_metrics(y_true_valid_metrics, y_pred19, penalty_matrix)
