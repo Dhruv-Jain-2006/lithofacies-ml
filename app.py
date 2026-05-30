@@ -2,6 +2,9 @@ import os
 import sys
 import pickle
 import logging
+import json
+import threading
+import uuid
 import numpy as np
 import pandas as pd
 from flask import Flask, jsonify as _orig_jsonify, render_template, request, send_from_directory
@@ -94,6 +97,11 @@ WAVELET_COLS = ORIGINAL_COLS + PETRO_COLS + ROLL_COLS + CWT_BAND_COLS
 # ---------------------------------------------------------
 df_processed = None
 cached_uploaded_well_df = None
+preloaded_comparisons = {}
+
+# Global Task Registry for Async File Uploads
+upload_tasks = {}
+upload_tasks_lock = threading.Lock()
 
 # Config-specific dictionaries for 5 configurations
 models_dict = {}
@@ -117,7 +125,7 @@ transition_matrix = None
 
 def initialize_app():
     global df_processed, models_dict, scalers_dict, features_dict, penalty_matrix, transition_matrix
-    global models_orig, models_wav, scaler_orig, scaler_wav, WAVELET_COLS
+    global models_orig, models_wav, scaler_orig, scaler_wav, WAVELET_COLS, preloaded_comparisons
     
     # 1. Load Processed Dataset
     dataset_path = 'data/interim/processed_features.parquet'
@@ -204,6 +212,18 @@ def initialize_app():
             logger.warning("Geological transition matrix not found on disk yet.")
     except Exception as e:
         logger.error(f"Error loading geological transition matrix: {str(e)}")
+        
+    # 6. Load precalculated well comparisons cache to prevent dynamic OOM unpickling
+    try:
+        comparisons_path = 'data/models/preloaded_comparisons.json'
+        if os.path.exists(comparisons_path):
+            with open(comparisons_path, 'r') as f:
+                preloaded_comparisons = json.load(f)
+            logger.info(f"Loaded {len(preloaded_comparisons)} precalculated well comparisons successfully.")
+        else:
+            logger.warning("Preloaded well comparisons database not found on disk.")
+    except Exception as e:
+        logger.error(f"Error loading preloaded comparisons database: {str(e)}")
 
 
 import gc
@@ -369,6 +389,11 @@ def get_well_model_comparison(well_id):
         return jsonify({"error": "Dataset not loaded"}), 500
         
     try:
+        # Serve precalculated well comparison if present to prevent heavy OOM model loads
+        if well_id in preloaded_comparisons:
+            logger.info(f"Serving precomputed comparison metrics for preloaded well block: {well_id}")
+            return jsonify(preloaded_comparisons[well_id])
+            
         if well_id in ['WELL_CUSTOM', 'uploaded_well']:
             if cached_uploaded_well_df is None:
                 return jsonify({"error": "No uploaded well in cache. Please upload a LAS file first."}), 400
@@ -688,67 +713,52 @@ def run_sandbox_prediction():
         logger.error(f"Sandbox Prediction API Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/upload', methods=['POST'])
-def upload_las_file():
+def process_upload_background(task_id, temp_path, filename, model_name, feature_set, use_viterbi):
     """
-    Accepts a raw LAS file upload, preprocesses it dynamically (imputing gaps,
-    extracting CWT wavelets, and scaling features), runs real-time inference,
-    and returns full vertical channel data for multi-track plotting.
+    Background worker that executes the entire, non-downsampled high-precision ingestion
+    pipeline in a thread-safe manner, writing progress states and final results to a global store.
     """
-    if df_processed is None:
-        return jsonify({"error": "Dataset not loaded"}), 500
-        
+    global cached_uploaded_well_df, upload_tasks
+    
+    def set_task_state(status, progress_step, message, result=None, error=None):
+        with upload_tasks_lock:
+            upload_tasks[task_id] = {
+                "status": status,
+                "progress_step": progress_step,
+                "message": message,
+                "result": result,
+                "error": error
+            }
+            logger.info(f"Task {task_id} status updated to: {status} ({progress_step}/4) - {message}")
+
     try:
-        global cached_uploaded_well_df
-        # Check if file was uploaded
-        if 'file' not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
-            
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({"error": "No file selected"}), 400
-            
-        # Securely save the temp file
-        temp_dir = 'data/raw/uploads'
-        os.makedirs(temp_dir, exist_ok=True)
-        temp_path = os.path.join(temp_dir, 'temp_uploaded_well.las')
-        file.save(temp_path)
-        
-        # Load and parse using lasio
+        # Step 0: Parsing
+        set_task_state("processing", 0, "Initializing and parsing raw LAS well log structure...")
         import lasio
-        logger.info(f"Parsing uploaded LAS file: {file.filename}")
         las = lasio.read(temp_path)
         df = las.df().reset_index()
         
-        # Cloud protection downsampling: Limit uploaded well to at most 1,500 depth samples 
-        # to guarantee execution completes in < 3 seconds, avoiding Render proxy timeouts (502)
-        # and Gunicorn OOM worker terminations.
-        if len(df) > 1500:
-            step = int(np.ceil(len(df) / 1500))
-            logger.info(f"Uploaded well has {len(df)} rows. Downsampling by factor of {step} for cloud performance...")
-            df = df.iloc[::step].copy()
+        # NOTE: NO DOWNSAMPLING! Zero downsampling to satisfy 100% data integrity constraint.
+        logger.info(f"Background Ingestion parsing completed: {len(df)} depth intervals parsed (NO DOWNSAMPLING).")
         
-        # Standardize columns to uppercase first
+        # Standardize columns to uppercase
         df.columns = [col.upper().strip() for col in df.columns]
         
-        # Rename common depth mnemonics to DEPTH_MD if DEPTH_MD is not already present
         if 'DEPTH_MD' not in df.columns:
             if 'DEPT' in df.columns:
                 df = df.rename(columns={'DEPT': 'DEPTH_MD'})
             elif 'DEPTH' in df.columns:
                 df = df.rename(columns={'DEPTH': 'DEPTH_MD'})
                 
-        # Eliminate duplicate column names (e.g. duplicate DEPTH_MD from index + curve)
         df = df.loc[:, ~df.columns.duplicated()]
         
-        # Ensure DEPTH_MD is present
         if 'DEPTH_MD' not in df.columns:
-            return jsonify({"error": "Uploaded LAS file is missing a DEPTH, DEPT, or DEPTH_MD curve"}), 400
+            raise ValueError("Uploaded LAS file is missing a DEPTH, DEPT, or DEPTH_MD curve.")
             
-        # Calculate relative depth dynamically for the uploaded well
+        # Step 1: Preprocessing & Imputing
+        set_task_state("processing", 1, "Engineering advanced petrophysical and rolling stats features...")
         df['RELATIVE_DEPTH'] = (df['DEPTH_MD'] - df['DEPTH_MD'].min()) / (df['DEPTH_MD'].max() - df['DEPTH_MD'].min() + 1e-8)
         
-        # Populate missing columns with training dataset medians to prevent row drops
         for col in ORIGINAL_COLS:
             if col not in df.columns:
                 fallback_val = float(df_processed[col].median()) if df_processed is not None else 8.5
@@ -757,23 +767,28 @@ def upload_las_file():
         df['WELL_ID'] = 'uploaded_well'
         df['WELL'] = 'uploaded_well'
         
-        # Preprocess features
         from src.features import handle_missing_values, compute_cwt_features, engineer_advanced_geological_features
         df_imputed = handle_missing_values(df, ORIGINAL_COLS)
         
-        # In case entire rows were dropped, fallback to simple fillna
         if len(df_imputed) == 0:
             df_imputed = df.ffill().bfill().fillna(0.0)
             
-        # Compute all advanced petrophysical and rolling stats features
         df_features = engineer_advanced_geological_features(df_imputed)
         
-        # Compute CWT coefficients dynamically
+        # Step 2: Continuous Wavelet Transform
+        set_task_state("processing", 2, "Computing multi-scale Continuous Wavelet Transforms (CWT)...")
         df_features = compute_cwt_features(df_features, WAVELET_LOGS)
-        cached_uploaded_well_df = df_features
         
+        # Proactive memory cleanup
+        gc.collect()
         
-        # Check if ground truth lithology is present in LAS
+        # Step 3: Inference & Sequence Modeling
+        set_task_state("processing", 3, f"Running calibrated {model_name} model inference & Viterbi smoothing...")
+        
+        # Cache processed features
+        cached_uploaded_well_df = df_features.copy()
+        
+        # Ground truth check
         has_gt = False
         y_true = None
         litho_col = 'FORCE_2020_LITHOFACIES_LITHOLOGY'
@@ -789,28 +804,21 @@ def upload_las_file():
             y_true = df_features['LITHOLOGY'].fillna(-1).values.astype(int)
             
         # Select active parameters for inference
-        model_name = request.form.get('model_name', 'Random Forest')
-        feature_set = request.form.get('feature_set', 'wavelet')
-        use_viterbi = request.form.get('use_viterbi', 'false').lower() == 'true'
-        
-        # Select active parameters for inference (lazy loaded on demand)
         models = get_models_for_config(feature_set)
         cols = ORIGINAL_COLS if feature_set == 'original' else WAVELET_COLS
         scaler = scaler_orig if feature_set == 'original' else scaler_wav
         
         model = models.get(model_name, models['Random Forest'])
         
-        # Prepare feature matrix
         X_raw = df_features[cols]
         if model_name == 'KNN':
             X_input = scaler.transform(X_raw)
         else:
             X_input = X_raw.values
             
-        # Run prediction
         predictions = model.predict(X_input).astype(int)
         
-        # Compute probabilities and advanced geological uncertainty
+        # Compute probabilities
         try:
             probabilities = model.predict_proba(X_input)
             max_probs = [float(p[pred]) for p, pred in zip(probabilities, predictions)]
@@ -832,7 +840,7 @@ def upload_las_file():
             ]
             low_confidence_flags = [False] * len(predictions)
             
-        # Run Viterbi sequence smoothing
+        # Run Viterbi
         try:
             if transition_matrix is not None:
                 viterbi_predictions = viterbi_decode(probabilities, transition_matrix).astype(int).tolist()
@@ -843,19 +851,14 @@ def upload_las_file():
             logger.error(f"Viterbi sequence decoding failed: {str(vex)}")
             viterbi_predictions = predictions.astype(int).tolist()
             
-        # Active y_pred based on use_viterbi toggle
         y_pred = np.array(viterbi_predictions) if use_viterbi else predictions
         
-        # Clean up temp file
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-            
         metrics = None
         mismatches = None
         comparison_metrics = None
+        
         if has_gt and y_true is not None:
             from src.metrics import get_classification_metrics
-            # Filter out unmapped indicators (-1)
             valid_mask = y_true >= 0
             if valid_mask.any():
                 y_true_valid = y_true[valid_mask]
@@ -867,7 +870,7 @@ def upload_las_file():
                 }
                 mismatches = (y_true != y_pred).astype(int).tolist()
                 
-                # Compute comparison_metrics for all 5 models (using downsampled dataset for cloud resource protection)
+                # Compute comparison metrics (running downsampled benchmarks to protect cloud RAM)
                 comparison_metrics = []
                 model_names = ['KNN', 'Random Forest', 'Decision Tree', 'XGBoost', 'LightGBM']
                 
@@ -880,10 +883,10 @@ def upload_las_file():
                     df_features_metrics = df_features.copy()
                     valid_mask_metrics = valid_mask
                     y_true_valid_metrics = y_true_valid
-                
+                    
                 models_orig_local = get_models_for_config('original')
                 models_wav_local = get_models_for_config('wavelet')
-
+                
                 for name in model_names:
                     acc12, pen12, ham12 = 0.0, 0.0, 0.0
                     try:
@@ -922,9 +925,10 @@ def upload_las_file():
                         "pen19": round(pen19, 4),
                         "ham19": round(ham19, 4)
                     })
-                    
-        # Downsample the visualization payload if the uploaded well is extremely large (> 5000 samples)
-        # to ensure fast network transfer and ultra-smooth browser chart rendering!
+
+        # Step 4: Finalizing & Vis Downsampling
+        set_task_state("processing", 4, "Structuring and downsampling visualization payload...")
+        
         if len(df_features) > 5000:
             step = len(df_features) // 5000 + 1
             df_features_vis = df_features.iloc[::step].copy()
@@ -948,7 +952,6 @@ def upload_las_file():
             low_confidence_flags_vis = low_confidence_flags
             mismatches_vis = mismatches
             
-        # Map values to payload lists (replacing NaNs with None for JSON compliance)
         payload = {}
         for col in df_features_vis.columns:
             if pd.api.types.is_numeric_dtype(df_features_vis[col]):
@@ -956,8 +959,8 @@ def upload_las_file():
             else:
                 payload[col] = df_features_vis[col].values.tolist()
                 
-        return jsonify({
-            "well_id": file.filename,
+        result_payload = {
+            "well_id": filename,
             "model_name": model_name,
             "feature_set": feature_set,
             "well_data": payload,
@@ -971,14 +974,100 @@ def upload_las_file():
             "mismatches": mismatches_vis,
             "metrics": metrics,
             "comparison_metrics": comparison_metrics
-        })
-
+        }
+        
+        # Complete
+        set_task_state("completed", 4, "Pipeline execution completed successfully!", result=result_payload)
         
     except Exception as e:
-        logger.error(f"LAS Upload API Error: {str(e)}")
+        logger.error(f"Error in background ingestion thread: {str(e)}")
         import traceback
         traceback.print_exc()
+        set_task_state("failed", 4, f"Ingestion pipeline failed: {str(e)}", error=str(e))
+        
+    finally:
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as io_err:
+                logger.error(f"Failed to remove temp file {temp_path}: {str(io_err)}")
+        gc.collect()
+
+@app.route('/api/upload', methods=['POST'])
+def upload_las_file():
+    """
+    Accepts a raw LAS file upload, schedules it for asynchronous ingestion in a background thread,
+    and instantly returns a 202 Accepted response with a unique task_id to prevent Render proxy timeouts.
+    """
+    if df_processed is None:
+        return jsonify({"error": "Dataset not loaded"}), 500
+        
+    try:
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+            
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+            
+        # Select active parameters for inference
+        model_name = request.form.get('model_name', 'Random Forest')
+        feature_set = request.form.get('feature_set', 'wavelet')
+        use_viterbi = request.form.get('use_viterbi', 'false').lower() == 'true'
+        
+        # Generate a unique task_id
+        task_id = str(uuid.uuid4())
+        
+        # Securely save the temp file under a unique task path
+        temp_dir = 'data/raw/uploads'
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_path = os.path.join(temp_dir, f'uploaded_{task_id}.las')
+        file.save(temp_path)
+        
+        # Initialize registry entry
+        with upload_tasks_lock:
+            upload_tasks[task_id] = {
+                "status": "queued",
+                "progress_step": 0,
+                "message": "Queued for processing...",
+                "result": None,
+                "error": None
+            }
+            
+        # Spawn daemon thread to process the pipeline asynchronously
+        thread = threading.Thread(
+            target=process_upload_background,
+            args=(task_id, temp_path, file.filename, model_name, feature_set, use_viterbi),
+            daemon=True
+        )
+        thread.start()
+        
+        # Return 202 Accepted instantly
+        return jsonify({
+            "status": "accepted",
+            "task_id": task_id,
+            "message": "Upload accepted. Background ingestion initialized."
+        }), 202
+        
+    except Exception as e:
+        logger.error(f"LAS Upload Initializer Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/upload/status/<task_id>', methods=['GET'])
+def get_upload_status(task_id):
+    """
+    Returns the current status, progress step, and message of an asynchronous background upload.
+    When successfully completed, returns the final result payload.
+    """
+    with upload_tasks_lock:
+        task = upload_tasks.get(task_id)
+        
+    if not task:
+        return jsonify({"error": f"Task {task_id} not found"}), 404
+        
+    return jsonify(task)
 
 # ---------------------------------------------------------
 # MAIN BOOTSTRAPPER

@@ -1498,7 +1498,49 @@
               const errData = await res.json().catch(() => ({}));
               throw new Error(errData.error || `Upload failed with status code ${res.status}`);
             }
-            return res.json();
+            const uploadData = await res.json();
+            
+            // If background processing is running, initiate status polling
+            if (res.status === 202 && uploadData.task_id) {
+              return new Promise((resolve, reject) => {
+                const pollInterval = setInterval(() => {
+                  fetch(`/api/upload/status/${uploadData.task_id}`)
+                    .then(async (statusRes) => {
+                      if (!statusRes.ok) {
+                        const errData = await statusRes.json().catch(() => ({}));
+                        throw new Error(errData.error || `Status check failed with status code ${statusRes.status}`);
+                      }
+                      return statusRes.json();
+                    })
+                    .then((task) => {
+                      if (task.status === 'completed') {
+                        clearInterval(pollInterval);
+                        resolve(task.result);
+                      } else if (task.status === 'failed') {
+                        clearInterval(pollInterval);
+                        reject(new Error(task.error || 'Ingestion pipeline failed on backend.'));
+                      } else {
+                        // Task is still running. Update React UI progress states dynamically!
+                        if (typeof task.progress_step === 'number') {
+                          setLoadingStep(task.progress_step);
+                        }
+                        // Inject detailed backend progress logs
+                        if (task.message) {
+                          const progressLabel = document.getElementById('progress-message-label');
+                          if (progressLabel) {
+                            progressLabel.innerText = task.message;
+                          }
+                        }
+                      }
+                    })
+                    .catch((err) => {
+                      clearInterval(pollInterval);
+                      reject(err);
+                    });
+                }, 2000);
+              });
+            }
+            return uploadData;
           });
         } else {
            // Preloaded well log curves and prediction
@@ -2208,7 +2250,7 @@
                         style={{ width: `${((loadingStep + 1) / 5) * 100}%` }}
                       ></div>
                     </div>
-                    <div className="text-center font-mono text-[11px] text-accent-secondary">
+                    <div id="progress-message-label" className="text-center font-mono text-[11px] text-accent-secondary">
                       {[
                         'Preprocessing log logs...',
                         'Applying Mexican hat wavelet transform...',
