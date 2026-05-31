@@ -540,36 +540,38 @@ def calculate_uncertainty_metrics(probabilities):
     """
     Computes Shannon entropy, top-3 candidates with their probabilities,
     and flags low confidence predictions (highest prob < 0.35) for each sample.
+    Utilizes highly optimized NumPy vectorization for massive execution speedups.
     """
-    entropies = []
-    top3_candidates = []
-    low_confidence_flags = []
+    probabilities = np.array(probabilities)
     
-    for probs in probabilities:
-        # Shannon Entropy: -sum(p * log2(p))
-        # Add epsilon to prevent log(0)
-        eps = 1e-12
-        p_clipped = np.clip(probs, eps, 1.0)
-        entropy = -np.sum(probs * np.log2(p_clipped))
-        entropies.append(float(entropy))
-        
-        # Get top-3 candidate classes
-        top3_indices = np.argsort(probs)[::-1][:3]
+    # 1. Vectorized Shannon Entropy: -sum(p * log2(p)) per row
+    eps = 1e-12
+    p_clipped = np.clip(probabilities, eps, 1.0)
+    entropies = -np.sum(probabilities * np.log2(p_clipped), axis=1)
+    entropies_list = entropies.tolist()
+    
+    # 2. Vectorized Low Confidence Flags: highest prob < 0.35
+    highest_probs = np.max(probabilities, axis=1)
+    low_confidence_flags = (highest_probs < 0.35).tolist()
+    
+    # 3. Vectorized Top-3 Candidate Indices
+    # Sorts along the columns, retrieves the last 3 indices (highest prob), and reverses them per row
+    top3_indices = np.argsort(probabilities, axis=1)[:, -3:][:, ::-1]
+    
+    # Construct structured candidates payload using localized fast lookups
+    top3_candidates = []
+    for row_idx, indices in enumerate(top3_indices):
         candidates = []
-        for idx in top3_indices:
+        for idx in indices:
             candidates.append({
                 "class_idx": int(idx),
                 "name": LITHOLOGY_LABELS[idx],
-                "probability": float(probs[idx]),
+                "probability": float(probabilities[row_idx, idx]),
                 "color": LITHOLOGY_COLORS[idx]
             })
         top3_candidates.append(candidates)
         
-        # Low confidence flag
-        highest_prob = float(np.max(probs))
-        low_confidence_flags.append(bool(highest_prob < 0.35))
-        
-    return entropies, top3_candidates, low_confidence_flags
+    return entropies_list, top3_candidates, low_confidence_flags
 
 @app.route('/api/predict', methods=['POST'])
 def run_prediction():

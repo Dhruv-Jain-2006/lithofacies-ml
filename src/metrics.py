@@ -87,10 +87,9 @@ def calculate_penalty_score(y_true, y_pred, penalty_matrix=None):
     y_true_clipped = np.clip(y_true, 0, max_label)
     y_pred_clipped = np.clip(y_pred, 0, max_label)
     
-    # Calculate sum of penalty costs
-    total_penalty = 0.0
-    for i in range(len(y_true)):
-        total_penalty += penalty_matrix[y_true_clipped[i], y_pred_clipped[i]]
+    # Calculate sum of penalty costs using fast NumPy vectorization
+    penalties = penalty_matrix[y_true_clipped, y_pred_clipped]
+    total_penalty = float(np.sum(penalties))
         
     # Return average negative penalty
     score = -total_penalty / len(y_true)
