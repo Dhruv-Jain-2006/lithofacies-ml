@@ -110,4 +110,35 @@ Open `http://localhost:5000` in your web browser to access:
 - **Geological Coherence:** Classifications match geological constraints; SHAP analyses confirm that Gamma Ray (`GR`) dominates clay-rich zones (shales), while Density (`RHOB`) and Neutron Porosity (`NPHI`) are highly responsive to coal formations.
 
 ---
+
+## 7. Production Cloud Hosting & RAM Optimizations
+
+To support deployment on free, resource-restricted cloud services (such as **Render.com**'s 512MB Free Tier), this repository incorporates an advanced **RAM-Free static predictions cache** architecture:
+
+- **100-Combination Split Cache:** The 4 preloaded wells are completely deterministic. We precalculated all 100 well, model, and feature set configurations (with and without Viterbi sequence smoothing). Instead of holding a giant 300MB+ JSON in memory (which unpickles to >1.5GB of RAM), we split it into **100 separate JSON payloads** under `data/predictions/` (each ~3.2MB).
+- **RAM-Free Routing Interception:** In `app.py`, requests to `/api/predict` for preloaded wells intercept the dynamic pipeline and load *only* the single 3.2MB JSON on demand. Scikit-learn, XGBoost, and LightGBM models are **never unpickled or loaded globally**, reducing startup RAM overhead to practically 0MB.
+- **Optimized Dynamic Inference:** For custom `.las` file uploads, the application continues to run live dynamic ML predictions. It utilizes a **micro-lazy-loader** to unpickle only the single requested model in a thread-safe manner, running aggressive garbage collection sweeps (`gc.collect()`) immediately after to remain well within the 512MB RAM budget.
+- **Dynamic Port & Package Bindings:** The `Dockerfile` has been optimized for multi-platform container orchestration (fully compatible with **Render** and **Hugging Face Spaces**):
+  - Automatically installs `libgomp1` (the multi-threaded OpenMP matrix package) to prevent C++ import errors for tree-boosting modules on Linux.
+  - Dynamically binds Gunicorn to the system-injected `$PORT` variable using shell execution (`sh -c "gunicorn -b 0.0.0.0:$PORT app:app"`), fully resolving port mismatches on host spin-up.
+
+### Deploying to Render (Free Tier - 512MB RAM)
+1. Go to your [Render Dashboard](https://dashboard.render.com/) -> click **New +** -> **Web Service**.
+2. Select your `lithofacies-ml` GitHub repository.
+3. Configure the settings:
+   - **Runtime**: `Docker` (automatically builds from the optimized `Dockerfile`).
+   - **Instance Type**: `Free` (512MB RAM).
+4. Click **Create Web Service**. It will build and run without memory limit restrictions!
+
+### Deploying to Hugging Face Spaces (Free Tier - 16GB RAM)
+For an even more robust hosting tier with unlimited RAM headroom:
+1. Create a **New Space** on Hugging Face, select **Docker** as the SDK, and choose **Blank** template.
+2. Select the free **CPU Basic (16GB RAM, 2 vCPUs)** tier.
+3. Add the Hugging Face repository as a Git remote and push:
+   ```bash
+   git remote add hf https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME
+   git push hf main
+   ```
+
+---
 *Reference: Merembayev, T.; Kurmangaliyev, D.; Bekbauov, B.; Amanbek, Y. A Comparison of Machine Learning Algorithms in Predicting Lithofacies. Energies 2021, 14, 1896. https://doi.org/10.3390/en14071896*
