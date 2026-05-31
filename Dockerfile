@@ -1,9 +1,10 @@
 # Use official slim Python runtime
 FROM python:3.9-slim
 
-# Install system dependencies needed for some Python builds
+# Install system dependencies needed for some Python builds and C++ tree boosters (libgomp1)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -17,11 +18,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy all project files
 COPY . .
 
-# Set default port to 7860 (Hugging Face standard)
+# Set default port to 7860 (Hugging Face standard, Render will override dynamically via $PORT)
 ENV PORT=7860
 
 # Expose port
 EXPOSE 7860
 
-# Start app using Gunicorn on 0.0.0.0:7860
-CMD ["gunicorn", "-b", "0.0.0.0:7860", "--timeout", "120", "app:app"]
+# Start app dynamically binding to $PORT using sh shell expansion
+CMD ["sh", "-c", "gunicorn -b 0.0.0.0:$PORT --timeout 120 app:app"]
