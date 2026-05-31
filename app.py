@@ -431,7 +431,10 @@ def get_well_model_comparison(well_id):
             
         well_df_metrics = well_df
             
-        y_true = well_df_metrics['LITHOLOGY'].fillna(-1).values.astype(int)
+        if 'LITHOLOGY' in well_df_metrics.columns:
+            y_true = well_df_metrics['LITHOLOGY'].fillna(-1).values.astype(int)
+        else:
+            y_true = np.full(len(well_df_metrics), -1, dtype=int)
         valid_mask = y_true >= 0
         
         # If no ground truth, we'll return an empty list or placeholders
@@ -658,7 +661,10 @@ def run_prediction():
         y_pred = np.array(viterbi_predictions) if use_viterbi else predictions.astype(int)
         
         # Calculate evaluation metrics side-by-side with ground-truth
-        y_true = well_df['LITHOLOGY'].fillna(-1).values.astype(int)
+        if 'LITHOLOGY' in well_df.columns:
+            y_true = well_df['LITHOLOGY'].fillna(-1).values.astype(int)
+        else:
+            y_true = np.full(len(well_df), -1, dtype=int)
         
         # Filter out unmapped indicators (-1)
         valid_mask = y_true >= 0

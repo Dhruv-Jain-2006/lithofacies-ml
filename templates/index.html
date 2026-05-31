@@ -1823,7 +1823,7 @@
       // Auto re-run prediction silently in background if selectedModel, selectedFeatureSet, selectedWell, or useViterbi changes during results view
       useEffect(() => {
         if (currentRoute === 'results' && !isInitializing) {
-          executePipeline(uploadedFile, true);
+          executePipeline(null, true);
         }
       }, [selectedModel, selectedFeatureSet, selectedWell, useViterbi, currentRoute, isInitializing]);
 
