@@ -878,7 +878,7 @@ def process_upload_background(task_id, temp_path, filename, model_name, feature_
         
         if litho_col in df_features.columns:
             from src.data_loader import LITHOLOGY_MAP
-            df_features['LITHOLOGY'] = df_features[litho_col].map(LITHOLOGY_MAP)
+            df_features['LITHOLOGY'] = df_features[litho_col].fillna(-1).astype(int).map(LITHOLOGY_MAP)
             has_gt = True
         elif 'LITHOLOGY' in df_features.columns:
             has_gt = True

@@ -84,7 +84,7 @@ def load_force_dataset(filepath="data/raw/15_9-23.csv"):
             
     # 5. Map numeric codes to 0..11 class labels
     if 'FORCE_2020_LITHOFACIES_LITHOLOGY' in df.columns:
-        df['LITHOLOGY'] = df['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(LITHOLOGY_MAP)
+        df['LITHOLOGY'] = df['FORCE_2020_LITHOFACIES_LITHOLOGY'].fillna(-1).astype(int).map(LITHOLOGY_MAP)
     else:
         logger.warning("Lithology column FORCE_2020_LITHOFACIES_LITHOLOGY not found!")
         df['LITHOLOGY'] = np.nan
@@ -372,7 +372,7 @@ def main():
         
         litho_col = 'FORCE_2020_LITHOFACIES_LITHOLOGY'
         if litho_col in df.columns:
-            df['LITHOLOGY'] = df[litho_col].map(LITHOLOGY_MAP)
+            df['LITHOLOGY'] = df[litho_col].fillna(-1).astype(int).map(LITHOLOGY_MAP)
             
         df = df.dropna(subset=['LITHOLOGY']).reset_index(drop=True)
         df['LITHOLOGY'] = df['LITHOLOGY'].astype(int)

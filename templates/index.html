@@ -1738,7 +1738,7 @@
 
             if (data.comparison_metrics && data.comparison_metrics.length > 0) {
               setBenchmarkScores(data.comparison_metrics);
-            } else {
+            } else if (activeWell === 'WELL_CUSTOM' || activeWell === 'uploaded_well') {
               setBenchmarkScores([
                 { name: 'KNN', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' },
                 { name: 'Random Forest ★', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' },
@@ -1746,6 +1746,8 @@
                 { name: 'XGBoost', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' },
                 { name: 'LightGBM', acc12: 'N/A', pen12: 'N/A', ham12: 'N/A', acc19: 'N/A', pen19: 'N/A', ham19: 'N/A' }
               ]);
+            } else {
+              setBenchmarkScores(BENCHMARK_SCORES);
             }
 
             // Set dynamic curves and predictions structure
