@@ -1418,6 +1418,11 @@
       useEffect(() => {
         localStorage.setItem('lithofacies_route', currentRoute);
         window.scrollTo({ top: 0, behavior: 'instant' });
+        if (currentRoute === 'landing') {
+          setAnalysisLoading(false);
+          setBackgroundLoading(false);
+          setLoadingStep(0);
+        }
       }, [currentRoute]);
 
       // Intersection Observer to toggle header CTA when Hero Start Analysis CTA goes off-screen
