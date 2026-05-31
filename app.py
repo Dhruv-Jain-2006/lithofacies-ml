@@ -224,6 +224,21 @@ def initialize_app():
             logger.warning("Preloaded well comparisons database not found on disk.")
     except Exception as e:
         logger.error(f"Error loading preloaded comparisons database: {str(e)}")
+        
+    # 7. Pre-warm model cache in background to make uploads and sandbox changes instant
+    def warm_up_model_cache():
+        logger.info("Starting background model cache warming...")
+        model_names = ['KNN', 'Random Forest', 'Decision Tree', 'XGBoost', 'LightGBM']
+        configs = ['original', 'wavelet']
+        for config in configs:
+            for name in model_names:
+                try:
+                    load_single_model(config, name)
+                except Exception as pre_warm_err:
+                    logger.error(f"Failed to pre-warm model {name} for {config}: {str(pre_warm_err)}")
+        logger.info("Model cache warming completed successfully! All 10 models are now hot in memory.")
+        
+    threading.Thread(target=warm_up_model_cache, daemon=True).start()
 
 
 import gc
@@ -262,11 +277,21 @@ def get_models_for_config(config):
     return models_dict[config]
 
 
+# In-memory model cache to make subsequent predictions and comparisons instant
+model_cache = {}
+model_cache_lock = threading.Lock()
+
 def load_single_model(config, model_name):
     """
     Loads a single micro-model file from disk for the specified configuration.
-    Fully thread-safe and extremely memory-efficient, using 90% less RAM than loading the giant dict.
+    Fully thread-safe and utilizes an in-memory cache to make subsequent loads instantaneous.
     """
+    cache_key = f"{config}_{model_name}"
+    
+    with model_cache_lock:
+        if cache_key in model_cache:
+            return model_cache[cache_key]
+            
     safe_name = model_name.replace(' ', '_')
     path = f"data/models/models_{config}_{safe_name}.pkl"
     if not os.path.exists(path):
@@ -276,10 +301,14 @@ def load_single_model(config, model_name):
         return models.get(model_name)
         
     try:
-        logger.info(f"Micro-loading model '{model_name}' for feature set '{config}' from disk (RAM optimized)...")
+        logger.info(f"Micro-loading model '{model_name}' for feature set '{config}' from disk...")
         with open(path, 'rb') as f:
             model = pickle.load(f)
-        logger.info(f"Successfully loaded single model '{model_name}' (RAM optimized).")
+            
+        with model_cache_lock:
+            model_cache[cache_key] = model
+            
+        logger.info(f"Successfully loaded and cached model '{model_name}'.")
         return model
     except Exception as e:
         logger.error(f"Error loading single model {model_name} for {config}: {str(e)}")
