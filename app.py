@@ -429,11 +429,7 @@ def get_well_model_comparison(well_id):
         if len(well_df) == 0:
             return jsonify({"error": f"Well {well_id} not found"}), 404
             
-        # Downsample well logs for metrics comparison to avoid Gunicorn timeouts & OOM kills on Free Cloud Tiers
-        if len(well_df) > 1000:
-            well_df_metrics = well_df.iloc[::10].copy()
-        else:
-            well_df_metrics = well_df.copy()
+        well_df_metrics = well_df
             
         y_true = well_df_metrics['LITHOLOGY'].fillna(-1).values.astype(int)
         valid_mask = y_true >= 0
@@ -932,15 +928,9 @@ def process_upload_background(task_id, temp_path, filename, model_name, feature_
                 comparison_metrics = []
                 model_names = ['KNN', 'Random Forest', 'Decision Tree', 'XGBoost', 'LightGBM']
                 
-                if len(df_features) > 1000:
-                    df_features_metrics = df_features.iloc[::10].copy()
-                    y_true_metrics = y_true[::10]
-                    valid_mask_metrics = y_true_metrics >= 0
-                    y_true_valid_metrics = y_true_metrics[valid_mask_metrics]
-                else:
-                    df_features_metrics = df_features.copy()
-                    valid_mask_metrics = valid_mask
-                    y_true_valid_metrics = y_true_valid
+                df_features_metrics = df_features
+                valid_mask_metrics = valid_mask
+                y_true_valid_metrics = y_true_valid
                     
                 for name in model_names:
                     acc12, pen12, ham12 = 0.0, 0.0, 0.0
