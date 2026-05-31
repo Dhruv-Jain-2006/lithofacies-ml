@@ -868,9 +868,6 @@ def process_upload_background(task_id, temp_path, filename, model_name, feature_
         # Step 3: Inference & Sequence Modeling
         set_task_state("processing", 3, f"Running calibrated {model_name} model inference & Viterbi smoothing...")
         
-        # Cache processed features
-        cached_uploaded_well_df = df_features.copy()
-        
         # Ground truth check
         has_gt = False
         y_true = None
@@ -882,6 +879,9 @@ def process_upload_background(task_id, temp_path, filename, model_name, feature_
             has_gt = True
         elif 'LITHOLOGY' in df_features.columns:
             has_gt = True
+            
+        # Cache processed features (with LITHOLOGY column)
+        cached_uploaded_well_df = df_features.copy()
             
         if has_gt:
             y_true = df_features['LITHOLOGY'].fillna(-1).values.astype(int)
