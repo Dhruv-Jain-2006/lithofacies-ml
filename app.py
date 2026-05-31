@@ -562,6 +562,37 @@ def run_prediction():
         if not well_id or not model_name:
             return jsonify({"error": "Missing well_id or model_name parameter"}), 400
             
+        # Check if we can serve precomputed predictions for preloaded wells to prevent heavy ML model unpickling OOMs
+        safe_model_name = model_name.replace(' ', '_')
+        pred_file = f"data/predictions/{well_id}_{safe_model_name}_{feature_set}.json"
+        if os.path.exists(pred_file):
+            logger.info(f"Serving precomputed predictions for {well_id} | {model_name} | {feature_set} (RAM-free lookup)")
+            try:
+                with open(pred_file, 'r') as f:
+                    cached_data = json.load(f)
+                
+                # Retrieve smoothed/unsmoothed targets depending on the use_viterbi toggle
+                active_predictions = cached_data["viterbi_predictions"] if use_viterbi else cached_data["predictions"]
+                active_mismatches = cached_data["mismatches_viterbi"] if use_viterbi else cached_data["mismatches"]
+                active_metrics = cached_data["metrics_viterbi"] if use_viterbi else cached_data["metrics"]
+                
+                return jsonify({
+                    "well_id": well_id,
+                    "model_name": model_name,
+                    "feature_set": feature_set,
+                    "predictions": cached_data["predictions"],
+                    "viterbi_predictions": cached_data["viterbi_predictions"],
+                    "probabilities": cached_data["probabilities"],
+                    "entropies": cached_data["entropies"],
+                    "top3_candidates": cached_data["top3_candidates"],
+                    "low_confidence_flags": cached_data["low_confidence_flags"],
+                    "mismatches": active_mismatches,
+                    "viterbi_applied": bool(use_viterbi),
+                    "metrics": active_metrics
+                })
+            except Exception as cache_err:
+                logger.error(f"Failed to read precomputed predictions file {pred_file}: {str(cache_err)}. Falling back to dynamic inference...")
+            
         if well_id in ['WELL_CUSTOM', 'uploaded_well']:
             if cached_uploaded_well_df is None:
                 return jsonify({"error": "No uploaded well in cache. Please upload a LAS file first."}), 400

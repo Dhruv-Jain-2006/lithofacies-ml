@@ -808,7 +808,7 @@
         if (elDepth) elDepth.textContent = activeDepth.toFixed(1) + ' m';
         if (elPred) {
           elPred.textContent = activePred;
-          elPred.style.color = FACIES_COLOR_MAP[activePred] || '#ffffff';
+          elPred.style.color = activePred === 'Coal' ? '#A1A1AA' : (FACIES_COLOR_MAP[activePred] || '#ffffff');
         }
         if (elProb) elProb.textContent = 'Confidence: ' + (activeProb * 100).toFixed(1) + '%';
         if (elFaciesPointer) elFaciesPointer.style.top = `${(idx / predictionsList.length) * 100}%`;
@@ -862,7 +862,7 @@
             <div className="col-span-12 flex flex-col md:flex-row justify-between items-start md:items-center bg-elevated/80 border border-border-accent/20 px-4 py-2.5 rounded-xl backdrop-blur-md gap-3">
               <div className="flex flex-wrap gap-4 items-center">
                 <span className="text-xs font-mono text-text-secondary">ACTIVE DEPTH: <strong id="hud-depth" className="text-accent-primary text-sm">{initialDepth.toFixed(1)} m</strong></span>
-                <span className="text-xs font-mono text-text-secondary">FACIES CLASSIFICATION: <strong id="hud-pred" className="text-accent-secondary text-sm" style={{ color: FACIES_COLOR_MAP[initialPred] }}>{initialPred}</strong></span>
+                <span className="text-xs font-mono text-text-secondary">FACIES CLASSIFICATION: <strong id="hud-pred" className="text-accent-secondary text-sm" style={{ color: initialPred === 'Coal' ? '#A1A1AA' : (FACIES_COLOR_MAP[initialPred] || '#ffffff') }}>{initialPred}</strong></span>
                 
                 {/* Dynamic Candidates list wrapper */}
                 <div id="hud-candidates-container" className="flex items-center gap-2 border-l border-white/10 pl-4">
@@ -1297,6 +1297,82 @@
       );
     };
 
+    const MODEL_EXPLANATIONS = {
+      'KNN': {
+        name: 'K-Nearest Neighbors',
+        type: 'Instance-Based',
+        icon: 'fa-solid fa-circle-nodes',
+        desc: 'Classifies rock intervals by measuring petrophysical distance metrics in multi-dimensional space.',
+        details: 'Calculates Euclidean distance to identify surrounding lithofacies. Fast to adapt but sensitive to localized noise and feature scaling.'
+      },
+      'Random Forest': {
+        name: 'Random Forest Ensemble',
+        type: 'Bagged Trees',
+        icon: 'fa-solid fa-diagram-project',
+        desc: 'Ensemble of randomized decision trees that reduces variance and mitigates overfitting.',
+        details: 'Aggregates predictions from hundreds of independent estimators. Excels at identifying non-linear log interactions and robust to noise.'
+      },
+      'Decision Tree': {
+        name: 'Decision Tree',
+        type: 'Space Partition',
+        icon: 'fa-solid fa-code-branch',
+        desc: 'Constructs sequential binary splits to segment geological log properties.',
+        details: 'Provides unmatched transparency by mapping exact petrophysical thresholds (e.g., GR > 70 API). Highly prone to prediction boundaries jitter.'
+      },
+      'XGBoost': {
+        name: 'eXtreme Gradient Boosting',
+        type: 'Gradient Boosting',
+        icon: 'fa-solid fa-bolt',
+        desc: 'Sequential decision tree booster optimizing a regularized geological loss function.',
+        details: 'Consistently delivers state-of-the-art accuracy by focusing tree building on hard-to-classify boundary zones and thin-bedded reservoirs.'
+      },
+      'LightGBM': {
+        name: 'Light Gradient Boosting',
+        type: 'Histogram Boosting',
+        icon: 'fa-solid fa-gauge-high',
+        desc: 'Optimized leaf-wise tree growth engine using histogram-based feature binning.',
+        details: 'Maintains elite performance levels with highly optimized memory usage and blazing-fast inference speeds. Tailored for heavy-duty well logs.'
+      }
+    };
+
+    const FEATURE_EXPLANATIONS = {
+      'original': {
+        name: 'Original 12F',
+        type: 'Pure Petrophysics',
+        icon: 'fa-solid fa-calculator',
+        desc: 'Baseline petrophysical logs capturing raw physical rock properties.',
+        details: 'Uses instantaneous measurements like Gamma Ray, Density, and Resistivity. Provides solid lithological indicators but ignores structural depositional context.'
+      },
+      'original_nodep': {
+        name: 'Original No-Depth',
+        type: 'Agnostic Raw Logs',
+        icon: 'fa-solid fa-shield-halved',
+        desc: 'Petrophysical suite with absolute depth measurements completely omitted.',
+        details: 'Prevents spatial bias and enforces predictions based purely on log signatures. Highly generalizable across different basins.'
+      },
+      'engineered': {
+        name: 'Engineered Stats',
+        type: 'Contextual Windows',
+        icon: 'fa-solid fa-chart-line',
+        desc: 'Rolling statistical indicators computed across localized depth windows.',
+        details: 'Enriches raw logs with rolling means, gradients, and standard deviations. Helps distinguish thick massive beds from thin-bedded heterolithics.'
+      },
+      'wavelet': {
+        name: 'Wavelet 19F',
+        type: 'Continuous Wavelet',
+        icon: 'fa-solid fa-wave-square',
+        desc: 'Mexican Hat wavelet coefficients capturing depositional frequencies.',
+        details: 'Applies Continuous Wavelet Transforms (CWT) to extract multi-scale energy features. Captures thin bedding interfaces and low-frequency sequence boundaries.'
+      },
+      'wavelet_nodep': {
+        name: 'Wavelet No-Depth',
+        type: 'Agnostic Wavelets',
+        icon: 'fa-solid fa-bezier-curve',
+        desc: 'Multi-scale wavelet energy profiles without absolute spatial coordinate bias.',
+        details: 'Combines deep spectral decomposition from CWT with depth-agnostic variables. Prevents over-reliance on target depths.'
+      }
+    };
+
     // Global App Component
     function App() {
       const [isInitializing, setIsInitializing] = useState(true);
@@ -1682,7 +1758,7 @@
               top3Candidates: data.top3_candidates ? data.top3_candidates.map(list => {
                 return list.map(c => ({
                   name: LITHOLOGY_LABELS[c.class_idx] || `Class ${c.class_idx}`,
-                  color: FACIES_COLOR_MAP[LITHOLOGY_LABELS[c.class_idx]] || '#ffffff',
+                  color: LITHOLOGY_LABELS[c.class_idx] === 'Coal' ? '#A1A1AA' : (FACIES_COLOR_MAP[LITHOLOGY_LABELS[c.class_idx]] || '#ffffff'),
                   probability: c.probability
                 }));
               }) : data.well_data.DEPTH_MD.map(() => []),
@@ -1875,7 +1951,7 @@
                     {selectedDatasetName}
                   </span>
                   <button
-                    onClick={() => { if (analysisLoading) return; setCurrentRoute('upload'); }}
+                    onClick={() => { if (analysisLoading) return; setUploadedFile(null); setCurrentRoute('upload'); }}
                     disabled={analysisLoading}
                     className={`font-heading font-bold uppercase tracking-widest text-[9px] sm:text-xs rounded-full px-3.5 py-3.5 sm:px-6 sm:py-3 transition-all duration-300 flex items-center justify-center gap-1.5 ${
                       analysisLoading
@@ -1918,7 +1994,7 @@
                   }`}
                 >
                   <button
-                    onClick={() => { if (analysisLoading) return; setCurrentRoute('upload'); }}
+                    onClick={() => { if (analysisLoading) return; setUploadedFile(null); setCurrentRoute('upload'); }}
                     disabled={analysisLoading}
                     className={`btn-primary font-heading font-bold text-[10px] sm:text-xs tracking-wider rounded-full flex items-center justify-center gap-1.5 whitespace-nowrap px-5 py-2 sm:px-6 sm:py-2.5 transition-all duration-500 ${
                       analysisLoading
@@ -1991,7 +2067,7 @@
                     style={{ animationDelay: '600ms', animationFillMode: 'forwards' }}>
                     <button
                       ref={heroCtaRef}
-                      onClick={() => { if (analysisLoading) return; setCurrentRoute('upload'); }}
+                      onClick={() => { if (analysisLoading) return; setUploadedFile(null); setCurrentRoute('upload'); }}
                       disabled={analysisLoading}
                       className={`btn-primary font-heading font-bold text-sm tracking-wide px-9 py-4 rounded-full flex items-center gap-2.5 transition-all ${
                         analysisLoading
@@ -2353,8 +2429,8 @@
                   </div>
 
                   {/* Sandbox Parameter Space Control Panel */}
-                  <div className="col-span-12 bg-card border border-border-subtle p-6 rounded-3xl flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-6 relative overflow-hidden transition-all hover:border-accent-primary/20">
-                    <div className="flex flex-col gap-4 flex-1">
+                  <div className="col-span-12 bg-card border border-border-subtle p-6 rounded-3xl grid grid-cols-1 xl:grid-cols-12 gap-8 relative overflow-hidden transition-all hover:border-accent-primary/20">
+                    <div className="flex flex-col gap-5 xl:col-span-5">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-accent-primary animate-pulse"></span>
@@ -2366,8 +2442,8 @@
                         </p>
                       </div>
 
-                      {/* Selectors grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                      {/* Selectors Stack (stacked vertically to utilize empty vertical space) */}
+                      <div className="flex flex-col gap-6 mt-2">
                         {/* Algorithm selector */}
                         <div>
                           <label className="block text-[10px] font-mono text-text-secondary uppercase tracking-wider mb-2">Select Active Classifier Model</label>
@@ -2476,30 +2552,77 @@
                       </div>
                     </div>
 
-                    {/* Viterbi sequence smoothing toggle */}
-                    <div className="border-t xl:border-t-0 xl:border-l border-white/5 pt-6 xl:pt-0 xl:pl-6 flex flex-col justify-center min-w-[240px]">
-                      <div className="flex items-center justify-between gap-4 mb-2">
-                        <div>
-                          <h4 className="font-heading font-bold text-sm text-white">Stratigraphy Smoothing</h4>
-                          <span className="text-[10px] font-mono text-text-muted block mt-0.5">Viterbi Sequence Optimization</span>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={useViterbi}
-                            onChange={(e) => {
-                              const val = e.target.checked;
-                              setUseViterbi(val);
-                            }}
-                            disabled={backgroundLoading || analysisLoading}
-                          />
-                          <div className="w-11 h-6 bg-void/85 border border-white/10 rounded-full peer peer-focus:ring-0 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#888] after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-secondary peer-checked:after:bg-void peer-checked:after:border-accent-secondary"></div>
-                        </label>
+                    {/* Right Half: Dynamic Synthesis Explainers & Stratigraphy Smoothing */}
+                    <div className="border-t xl:border-t-0 xl:border-l border-white/5 pt-6 xl:pt-0 xl:pl-8 flex flex-col justify-between gap-5 xl:col-span-7">
+                      <div className="flex flex-col gap-4 flex-grow">
+                        <span className="font-mono text-[9px] text-accent-primary uppercase tracking-[0.25em] block">Active Configuration Synthesis</span>
+                        
+                        {/* Model Explanation Block */}
+                        {(() => {
+                          const mInfo = MODEL_EXPLANATIONS[selectedModel] || MODEL_EXPLANATIONS['Random Forest'];
+                          return (
+                            <div className="glass-card border border-white/5 p-4 rounded-2xl flex gap-3.5 transition-all duration-300 hover:border-accent-primary/30">
+                              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg text-accent-primary bg-white/[0.03] border border-white/5 flex-shrink-0 shadow-inner">
+                                <i className={mInfo.icon}></i>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <h4 className="font-heading font-bold text-sm text-white truncate">{mInfo.name}</h4>
+                                  <span className="font-mono text-[8px] px-1.5 py-0.5 rounded border border-white/10 text-text-muted whitespace-nowrap uppercase tracking-wider">{mInfo.type}</span>
+                                </div>
+                                <p className="font-sans text-[11px] text-text-muted mt-1 leading-relaxed">{mInfo.desc}</p>
+                                <p className="font-sans text-[10px] text-text-secondary/70 mt-2 leading-relaxed italic border-l border-white/10 pl-2">{mInfo.details}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Feature Set Explanation Block */}
+                        {(() => {
+                          const fInfo = FEATURE_EXPLANATIONS[selectedFeatureSet] || FEATURE_EXPLANATIONS['engineered'];
+                          return (
+                            <div className="glass-card border border-white/5 p-4 rounded-2xl flex gap-3.5 transition-all duration-300 hover:border-accent-secondary/30">
+                              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg text-accent-secondary bg-white/[0.03] border border-white/5 flex-shrink-0 shadow-inner">
+                                <i className={fInfo.icon}></i>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <h4 className="font-heading font-bold text-sm text-white truncate">{fInfo.name}</h4>
+                                  <span className="font-mono text-[8px] px-1.5 py-0.5 rounded border border-white/10 text-text-muted whitespace-nowrap uppercase tracking-wider">{fInfo.type}</span>
+                                </div>
+                                <p className="font-sans text-[11px] text-text-muted mt-1 leading-relaxed">{fInfo.desc}</p>
+                                <p className="font-sans text-[10px] text-text-secondary/70 mt-2 leading-relaxed italic border-l border-white/10 pl-2">{fInfo.details}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
-                      <p className="font-sans text-[11px] text-text-muted leading-relaxed">
-                        Calculates global sequence probabilities from training transition patterns to resolve boundary noise and output clean geological bedding intervals.
-                      </p>
+
+                      {/* Stratigraphy Smoothing (Sitting at the bottom right) */}
+                      <div className="border-t border-white/5 pt-4">
+                        <div className="flex items-center justify-between gap-4 mb-2">
+                          <div>
+                            <h4 className="font-heading font-bold text-sm text-white">Stratigraphy Smoothing</h4>
+                            <span className="text-[10px] font-mono text-text-muted block mt-0.5">Viterbi Sequence Optimization</span>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={useViterbi}
+                              onChange={(e) => {
+                                const val = e.target.checked;
+                                setUseViterbi(val);
+                              }}
+                              disabled={backgroundLoading || analysisLoading}
+                            />
+                            <div className="w-11 h-6 bg-void/85 border border-white/10 rounded-full peer peer-focus:ring-0 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#888] after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-secondary peer-checked:after:bg-void peer-checked:after:border-accent-secondary"></div>
+                          </label>
+                        </div>
+                        <p className="font-sans text-[11px] text-text-muted leading-relaxed">
+                          Calculates global sequence probabilities from training transition patterns to resolve boundary noise and output clean geological bedding intervals.
+                        </p>
+                      </div>
                     </div>
 
                     {/* Background processing loader overlay */}
