@@ -57,21 +57,21 @@ lithofacies-ml/
 - **`data_loader.py`:** Standardizes LAS loading via the `lasio` library. If raw data is absent, it automatically triggers a **Geologically Coherent Synthetic well log generator** that simulates organic sedimentary logs matching real petrophysical correlations (e.g. Coal having anomalously low density and high neutron porosity).
 - **`features.py`:** Handles missing gaps (fills short gaps < 5 samples with a well's log median, and drops larger blocks or missing logs), fits/applies standard scaling, and extracts continuous wavelet transform coefficients per well using PyWavelets.
 - **`models.py`:** Configures and fits the five classifiers using GroupKFold well-based cross-validation to search hyperparameter spaces, implementing the exact model settings described in the literature.
-- **`metrics.py`:** Includes Jaccard accuracy, Hamming loss, and the domain-specific Geological Penalty Score. Downloads the FORCE 2020 penalty matrix or falls back to a geological penalty fallback matrix.
+- **`metrics.py`:** Includes Jaccard accuracy, Hamming loss, and the domain-specific Geological Penalty Score. Downloads the FORCE 2020 penalty matrix or falls back to a geological penalty fallback matrix..
 - **`explain.py`:** Standardizes SHAP multi-class computations and exports feature contribution beeswarm charts for all 12 classes.
 - **`sequence.py`:** Implements a dynamic programming **Viterbi sequence decoder**. Calculates transition probabilities from FORCE 2020 training sequence beds to resolve boundary noise and smooth high-frequency ML depth-wise classifications into contiguous stratigraphic layers.
-- **`augmentation.py`:** Standardizes a geologically-coherent class oversampling framework to resolve severe dataset imbalances (skewed ratios of sandstone/shale vs. rare coal/anhydrite beds) without producing out-of-bounds petrophysical features.
+- **`augmentation.py`:** Standardizes a geologically-coherent class oversampling framework to resolve severe dataset imbalances (skewed ratios of sandstone/shale vs. rare coal/anhydrite beds) without producing out-of-bounds petrophysical features..
 
 ---
 
 ## 4. Replicated Jupyter Notebooks
 
 Each notebook can be executed independently from a fresh kernel restart:
-1. **`01_eda.ipynb`:** Explores sensor logging curves, analyzes missingness using `missingno`, plots class distributions in log scale, and displays standard multi-track well records vs depth.
+1. **`01_eda.ipynb`:** Explores sensor logging curves, analyzes missingness using `missingno`, plots class distributions in log scale, and displays standard multi-track well records vs depth..
 2. **`02_feature_engineering.ipynb`:** Resolves data gaps, normalizes distributions, performs PyWavelets CWT, and displays a 2D wavelet coefficient scalogram.
 3. **`03_model_training.ipynb`:** Implements train-test splits by well group, standard scales distance metrics, trains/tunes all five classifiers on 12-feature and 19-feature sets, and serializes trained models.
 4. **`04_evaluation.ipynb`:** Builds the 5x3x2 comparative results table (replicating Table 6), generates confusion matrix heatmaps, and outputs class-specific recall, precision, and F1 metrics.
-5. **`05_shap_analysis.ipynb`:** Performs tree explainability on model predictions, generating stacked global importance charts and 12 distinct class beeswarm panels.
+5. **`05_shap_analysis.ipynb`:** Performs tree explainability on model predictions, generating stacked global importance charts and 12 distinct class beeswarm panels..
 
 ---
 
